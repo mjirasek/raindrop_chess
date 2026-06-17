@@ -8,34 +8,20 @@ interface Props {
   onFlipCard: () => void;
 }
 
-const CARD_SYMBOLS: Record<CardType, string> = {
-  king: '♚',
-  queen: '♛',
-  rook: '♜',
-  knight: '♞',
-  'bishop-light': '♝',
-  'bishop-dark': '♝',
-  pawn: '♟',
+const SYMBOLS: Record<CardType, string> = {
+  king: '♚', queen: '♛', rook: '♜', knight: '♞',
+  'bishop-light': '♝', 'bishop-dark': '♝', pawn: '♟',
 };
 
-const CARD_NAMES: Record<CardType, string> = {
-  king: 'King',
-  queen: 'Queen',
-  rook: 'Rook',
-  knight: 'Knight',
-  'bishop-light': 'Bishop',
-  'bishop-dark': 'Bishop',
-  pawn: 'Pawn',
+const NAMES: Record<CardType, string> = {
+  king: 'King', queen: 'Queen', rook: 'Rook', knight: 'Knight',
+  'bishop-light': 'Bishop', 'bishop-dark': 'Bishop', pawn: 'Pawn',
 };
 
-const CARD_SUBTITLES: Record<CardType, string> = {
-  king: '',
-  queen: '',
-  rook: '',
-  knight: '',
-  'bishop-light': '☀ light sq.',
-  'bishop-dark': '☾ dark sq.',
-  pawn: '',
+// Light/dark square colours matching the chessground brown theme
+const BISHOP_SQUARE_COLOR: Record<'bishop-light' | 'bishop-dark', string> = {
+  'bishop-light': '#f0d9b5',
+  'bishop-dark':  '#b58863',
 };
 
 export default function CardPile({ deck, color, isActive, canFlip, onFlipCard }: Props) {
@@ -43,100 +29,106 @@ export default function CardPile({ deck, color, isActive, canFlip, onFlipCard }:
   const revealed = deck.revealed;
   const isWhite = color === 'white';
 
-  const handleDeckClick = () => {
-    if (canFlip) onFlipCard();
+  const symbolStyle: React.CSSProperties = {
+    fontSize: '36px', lineHeight: 1, marginTop: '4px',
+    color: isWhite ? '#f0d9b5' : '#2a1a0e',
+    textShadow: isWhite ? 'none' : '0 0 4px rgba(255,255,255,0.6)',
   };
 
-  // Piece symbol color: white pieces are light, black pieces dark (with outline)
-  const symbolClass = isWhite
-    ? 'text-[#f0d9b5]'
-    : 'text-[#2a1a0e] [text-shadow:_0_0_3px_rgba(255,255,255,0.6)]';
-
   return (
-    <div className={`flex flex-col items-center gap-4 ${isWhite ? '' : 'flex-col-reverse'}`}>
+    <div style={{ display: 'flex', flexDirection: isWhite ? 'column' : 'column-reverse', alignItems: 'center', gap: '16px' }}>
 
-      {/* Revealed / face-up card */}
-      <div className="flex flex-col items-center gap-1">
-        <span className="text-[10px] uppercase tracking-widest text-[#6e6b67] font-semibold">
+      {/* Drawn / face-up card */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+        <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: '#6e6b67', fontWeight: 600 }}>
           Drawn
         </span>
         {revealed ? (
-          <div
-            className={`
-              w-[72px] h-[100px] rounded-lg flex flex-col items-center justify-center gap-1
-              border-2 select-none
-              ${isActive
-                ? 'border-[#629924] bg-[#1e2a0f] shadow-[0_0_14px_rgba(98,153,36,0.4)]'
-                : 'border-[#3d3b38] bg-[#262422]'}
-            `}
-          >
-            <span className={`text-4xl leading-none mt-1 ${symbolClass}`}>
-              {CARD_SYMBOLS[revealed.type]}
-            </span>
-            <span className="text-[11px] text-[#c0b9b0] font-semibold mt-1">
-              {CARD_NAMES[revealed.type]}
-            </span>
-            {CARD_SUBTITLES[revealed.type] && (
-              <span className="text-[9px] text-[#6e6b67] leading-tight text-center px-1">
-                {CARD_SUBTITLES[revealed.type]}
-              </span>
+          <div style={{
+            width: '72px', height: '100px', borderRadius: '8px',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px',
+            border: `2px solid ${isActive ? '#629924' : '#3d3b38'}`,
+            background: isActive ? '#1e2a0f' : '#262422',
+            boxShadow: isActive ? '0 0 14px rgba(98,153,36,0.35)' : 'none',
+            position: 'relative', overflow: 'hidden',
+          }}>
+            <span style={symbolStyle}>{SYMBOLS[revealed.type]}</span>
+            <span style={{ fontSize: '11px', color: '#c0b9b0', fontWeight: 600 }}>{NAMES[revealed.type]}</span>
+
+            {/* Bishop colour circle badge */}
+            {(revealed.type === 'bishop-light' || revealed.type === 'bishop-dark') && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                <span style={{
+                  width: '14px', height: '14px', borderRadius: '50%',
+                  background: BISHOP_SQUARE_COLOR[revealed.type],
+                  border: `2px solid ${revealed.type === 'bishop-light' ? '#c8a870' : '#7a5a3a'}`,
+                  flexShrink: 0,
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.5)',
+                }} />
+                <span style={{ fontSize: '9px', color: '#9e9b96', fontWeight: 600 }}>
+                  {revealed.type === 'bishop-light' ? 'light sq' : 'dark sq'}
+                </span>
+              </div>
             )}
           </div>
         ) : (
-          <div className="w-[72px] h-[100px] rounded-lg border-2 border-dashed border-[#3d3b38] bg-[#1a1816] flex items-center justify-center">
-            <span className="text-[#4a4744] text-[10px] text-center leading-tight px-1">
-              No card
-            </span>
+          <div style={{
+            width: '72px', height: '100px', borderRadius: '8px',
+            border: '2px dashed #3d3b38', background: '#1a1816',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <span style={{ fontSize: '10px', color: '#4a4744', textAlign: 'center' }}>No card</span>
           </div>
         )}
       </div>
 
-      {/* Face-down deck — click to flip */}
-      <div className="flex flex-col items-center gap-1">
-        <span className="text-[10px] uppercase tracking-widest text-[#6e6b67] font-semibold">
+      {/* Face-down deck */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+        <span style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', color: '#6e6b67', fontWeight: 600 }}>
           Deck
         </span>
         <div
-          className={`w-[72px] h-[100px] relative select-none ${canFlip ? 'deck-clickable' : ''}`}
-          onClick={handleDeckClick}
+          style={{ width: '72px', height: '100px', position: 'relative', cursor: canFlip ? 'pointer' : 'default' }}
+          onClick={canFlip ? onFlipCard : undefined}
           title={canFlip ? 'Click to flip a card' : undefined}
         >
           {remaining > 0 ? (
             <>
-              {/* Stack shadow layers */}
-              {remaining > 2 && (
-                <div className="absolute top-2 left-2 w-full h-full rounded-lg bg-[#1a1816] border border-[#3d3b38]" />
-              )}
-              {remaining > 1 && (
-                <div className="absolute top-1 left-1 w-full h-full rounded-lg bg-[#222018] border border-[#3d3b38]" />
-              )}
-              {/* Top card (face-down) */}
-              <div
-                className={`
-                  absolute inset-0 rounded-lg border-2 flex flex-col items-center justify-center gap-1
-                  bg-gradient-to-br from-[#2c2926] to-[#1a1816]
-                  ${canFlip
-                    ? 'border-[#629924]'
-                    : isActive
-                      ? 'border-[#4a6020]'
-                      : 'border-[#3d3b38]'}
-                `}
+              {remaining > 2 && <div style={{ position: 'absolute', top: '4px', left: '4px', right: 0, bottom: 0, background: '#1a1816', borderRadius: '7px', border: '1px solid #2e2c2a' }} />}
+              {remaining > 1 && <div style={{ position: 'absolute', top: '2px', left: '2px', right: 0, bottom: 0, background: '#222018', borderRadius: '7px', border: '1px solid #333028' }} />}
+              {/* Top card face-down */}
+              <div style={{
+                position: 'absolute', inset: 0, borderRadius: '8px',
+                border: `2px solid ${canFlip ? '#629924' : isActive ? '#4a6020' : '#3d3b38'}`,
+                background: 'linear-gradient(135deg, #2c2926 0%, #1a1816 100%)',
+                overflow: 'hidden',
+                boxShadow: canFlip ? '0 0 16px rgba(98,153,36,0.5)' : 'none',
+                transition: 'box-shadow 0.15s, border-color 0.15s, transform 0.15s',
+                transform: canFlip ? 'translateY(0)' : 'none',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px',
+              }}
+              onMouseEnter={e => { if (canFlip) { e.currentTarget.style.transform = 'translateY(-3px)'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(98,153,36,0.6)'; }}}
+              onMouseLeave={e => { if (canFlip) { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 0 16px rgba(98,153,36,0.5)'; }}}
               >
-                {/* Knight watermark */}
-                <span className="text-[36px] leading-none text-[#3a3530] select-none pointer-events-none">
-                  ♞
-                </span>
-                <span className={`text-[11px] font-bold leading-none ${canFlip ? 'text-[#629924]' : 'text-[#4a4744]'}`}>
+                {/* Abstract card back pattern — 3×3 dot grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 6px)', gap: '5px', opacity: 0.25 }}>
+                  {Array.from({ length: 9 }).map((_, i) => (
+                    <div key={i} style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#a09070' }} />
+                  ))}
+                </div>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: canFlip ? '#629924' : '#4a4744', marginTop: '4px' }}>
                   {remaining}
                 </span>
-                {canFlip && (
-                  <span className="text-[9px] text-[#629924] opacity-80 leading-none">flip</span>
-                )}
+                {canFlip && <span style={{ fontSize: '9px', color: '#629924', letterSpacing: '0.05em' }}>flip</span>}
               </div>
             </>
           ) : (
-            <div className="absolute inset-0 rounded-lg border-2 border-dashed border-[#3d3b38] bg-[#1a1816] flex items-center justify-center">
-              <span className="text-[#4a4744] text-[10px]">Empty</span>
+            <div style={{
+              position: 'absolute', inset: 0, borderRadius: '8px',
+              border: '2px dashed #3d3b38', background: '#1a1816',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <span style={{ fontSize: '10px', color: '#4a4744' }}>Empty</span>
             </div>
           )}
         </div>
