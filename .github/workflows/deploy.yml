@@ -7,6 +7,9 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
     steps:
       - uses: actions/checkout@v4
 
@@ -19,13 +22,11 @@ jobs:
 
       - run: npm run build
         env:
-          GITHUB_ACTIONS: true   # vite.config.ts reads this to set base=/destovky/
+          GITHUB_ACTIONS: true   # tells vite.config.ts to use base=/raindrop_chess/
 
-      - name: Push dist/ to mjirasek/destovky → gh-pages
+      - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
         with:
-          personal_token: ${{ secrets.DEPLOY_PAT }}
-          external_repository: mjirasek/destovky
-          publish_branch: gh-pages
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
           force_orphan: true

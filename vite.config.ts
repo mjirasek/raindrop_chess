@@ -5,5 +5,5 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   // In GitHub Actions the base is /destovky/; locally serve from root
-  base: process.env.GITHUB_ACTIONS ? '/destovky/' : '/',
+  base: process.env.GITHUB_ACTIONS ? '/raindrop_chess/' : '/',
 })
