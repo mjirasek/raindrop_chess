@@ -183,8 +183,17 @@ export default function App() {
 
   const handleFlipCard = useCallback(() => {
     if (!atLatest) return;
-    setLiveGame(prev => flipCard(prev));
-  }, [atLatest]);
+    const next = flipCard(liveGame);
+    if (next.gameOver && next.winner) {
+      // Card couldn't resolve check — push final snapshot with loss notation
+      const deck = liveGame.turn === 'white' ? liveGame.whiteDecks : liveGame.blackDecks;
+      const card = deck.pile[0];
+      const notation = card ? `${SYM[card.type === 'bishop-light' || card.type === 'bishop-dark' ? 'bishop' : card.type as CGPiece['role']][liveGame.turn]}→✗` : '✗';
+      pushSnapshot(next, notation, liveGame.turn);
+    } else {
+      setLiveGame(next);
+    }
+  }, [atLatest, liveGame]);
 
   const handleSquareClickDirect = useCallback((sq: Square) => {
     if (!interactive) return;

@@ -36,13 +36,15 @@ export default function GameInfo({ state, notations, cursor, timePresets, timeCo
     } else if (turnMode === 'choose') {
       if (cardFlipped) {
         hint = <>Place <strong style={{ color: '#a8d060' }}>{myDeck.revealed ? CARD_NAMES[myDeck.revealed.type] : ''}</strong> on a green square</>;
+      } else if (state.inCheck) {
+        hint = <><span style={{ color: '#ff9944' }}>In check</span> — move a piece, or flip a card <span style={{ color: '#cc6633' }}>(risky!)</span></>;
       } else {
         hint = hasCards ? 'Flip deck — or click a piece to move' : 'Click a piece to move';
       }
     } else if (turnMode === 'must-move') {
       hint = cardFlipped
         ? <>Block check: place <strong style={{ color: '#a8d060' }}>{myDeck.revealed ? CARD_NAMES[myDeck.revealed.type] : ''}</strong></>
-        : <span style={{ color: '#ff9944' }}>In check — click a piece to move</span>;
+        : <span style={{ color: '#ff9944' }}>In check — no cards left, must move</span>;
     }
     if (state.pendingPromotion) hint = 'Choose a promotion piece';
   }
@@ -58,7 +60,7 @@ export default function GameInfo({ state, notations, cursor, timePresets, timeCo
           <div style={{ color: '#a8d060', fontSize: '18px', fontWeight: 700 }}>
             {winner === 'white' ? '⬜ White wins!' : '⬛ Black wins!'}
           </div>
-          <div style={{ color: '#7a9a40', fontSize: '11px', marginTop: '2px' }}>Checkmate</div>
+          <div style={{ color: '#7a9a40', fontSize: '11px', marginTop: '2px' }}>{state.inCheck ? 'Card couldn\'t resolve check' : 'Checkmate'}</div>
         </div>
       )}
 

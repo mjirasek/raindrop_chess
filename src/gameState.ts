@@ -35,7 +35,30 @@ export function flipCard(state: GameState): GameState {
   const deck = state[deckKey];
   if (deck.pile.length === 0) return state;
   const [top, ...rest] = deck.pile;
-  const placementSquares = legalPlacementSquares(top.type, state.turn, state.board);
+  let placementSquares = legalPlacementSquares(top.type, state.turn, state.board);
+
+  // When in check, only squares that actually resolve check are valid
+  if (state.inCheck) {
+    const role: CGPiece['role'] =
+      top.type === 'bishop-light' || top.type === 'bishop-dark' ? 'bishop' : (top.type as CGPiece['role']);
+    placementSquares = placementSquares.filter(sq => {
+      const testBoard = new Map(state.board);
+      testBoard.set(sq, { role, color: state.turn });
+      return !isInCheck(state.turn, testBoard);
+    });
+    // Card cannot resolve check — player gambled and loses
+    if (placementSquares.length === 0) {
+      return {
+        ...state,
+        [deckKey]: { pile: rest, revealed: top },
+        cardFlipped: true,
+        legalPlacementSquares: [],
+        gameOver: true,
+        winner: opposite(state.turn),
+      };
+    }
+  }
+
   return {
     ...state,
     [deckKey]: { pile: rest, revealed: top },
@@ -128,28 +151,27 @@ function resolveNextTurn(state: GameState): GameState {
   const myKingPlaced = turn === 'white' ? state.whiteKingPlaced : state.blackKingPlaced;
   const inCheck = isInCheck(turn, state.board);
   const legalMoves = myKingPlaced ? legalChessMoves(turn, state.board) : new Map<Square, Square[]>();
+  const myDeck = turn === 'white' ? state.whiteDecks : state.blackDecks;
+  const hasCards = myDeck.pile.length > 0;
 
   if (myKingPlaced && inCheck) {
     const hasMoves = legalMoves.size > 0;
-    const myDeck = turn === 'white' ? state.whiteDecks : state.blackDecks;
-    let canPlaceToResolve = false;
-    if (myDeck.pile.length > 0) {
-      for (const cardType of new Set(myDeck.pile.map(c => c.type))) {
-        for (const sq of legalPlacementSquares(cardType, turn, state.board)) {
-          const testBoard = new Map(state.board);
-          const role: CGPiece['role'] =
-            cardType === 'bishop-light' || cardType === 'bishop-dark' ? 'bishop' : (cardType as CGPiece['role']);
-          testBoard.set(sq, { role, color: turn });
-          if (!isInCheck(turn, testBoard)) { canPlaceToResolve = true; break; }
-        }
-        if (canPlaceToResolve) break;
-      }
-    }
-    if (!hasMoves && !canPlaceToResolve) {
+    // Game over only when there are literally no options: no moves and no cards to flip
+    if (!hasMoves && !hasCards) {
       return { ...state, inCheck: true, legalMoves, legalPlacementSquares: [], gameOver: true, winner: opposite(turn), turnMode: 'must-move', pendingPromotion: null };
     }
   }
 
-  const turnMode: TurnMode = !myKingPlaced ? 'must-place' : inCheck ? 'must-move' : 'choose';
+  let turnMode: TurnMode;
+  if (!myKingPlaced) {
+    turnMode = 'must-place';
+  } else if (inCheck) {
+    // Has cards → player may move OR flip a card (risky — card might not resolve check)
+    // No cards → must move
+    turnMode = hasCards ? 'choose' : 'must-move';
+  } else {
+    turnMode = 'choose';
+  }
+
   return { ...state, inCheck, legalMoves, legalPlacementSquares: [], turnMode, pendingPromotion: null };
 }
