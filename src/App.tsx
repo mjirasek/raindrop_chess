@@ -259,39 +259,37 @@ export default function App() {
   // ── MOBILE layout ────────────────────────────────────────────────────────────
   if (isMobile) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: '#161512', color: '#bababa' }}>
-        {/* Header */}
-        <header style={{ background: '#262422', borderBottom: '1px solid #3d3b38', display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px' }}>
+      <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#161512', color: '#bababa' }}>
+
+        {/* Header — rigid, never moves */}
+        <header style={{ flexShrink: 0, background: '#262422', borderBottom: '1px solid #3d3b38', display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 14px' }}>
           <KnightLogo />
           <span style={{ color: '#fff', fontWeight: 700, fontSize: '16px' }}>Raindrop Chess</span>
           <span style={{ background: '#1e2a0f', color: '#629924', border: '1px solid #3a5a12', borderRadius: '4px', fontSize: '10px', fontWeight: 600, padding: '1px 6px', marginLeft: 'auto' }}>hot seat</span>
         </header>
 
-        {/* Black player row */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', gap: '8px' }}>
+        {/* Black player row — rigid */}
+        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 10px', gap: '8px' }}>
           <MobilePlayerRow color="black" active={blackActive} />
           <CardPile deck={displayGame.blackDecks} color="black" isActive={blackActive} canFlip={canBlackFlip} onFlipCard={handleFlipCard} layout="horizontal" />
-          {showClocks && (
-            <Clock seconds={clocks.black} active={blackActive && atLatest && clocksActive} large />
-          )}
+          {showClocks && <Clock seconds={clocks.black} active={blackActive && atLatest && clocksActive} large />}
         </div>
 
-        {/* Board — full width, no side padding */}
-        <div>{boardEl}</div>
+        {/* Board — rigid, never moves */}
+        <div style={{ flexShrink: 0 }}>{boardEl}</div>
 
-        {/* White player row */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', gap: '8px' }}>
+        {/* White player row — rigid */}
+        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 10px', gap: '8px' }}>
           <MobilePlayerRow color="white" active={whiteActive} />
           <CardPile deck={displayGame.whiteDecks} color="white" isActive={whiteActive} canFlip={canWhiteFlip} onFlipCard={handleFlipCard} layout="horizontal" />
-          {showClocks && (
-            <Clock seconds={clocks.white} active={whiteActive && atLatest && clocksActive} large />
-          )}
+          {showClocks && <Clock seconds={clocks.white} active={whiteActive && atLatest && clocksActive} large />}
         </div>
 
-        {/* Game info below board */}
-        <div style={{ padding: '4px 10px 16px' }}>
+        {/* Game info — scrolls in remaining space, board never shifts */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 10px 12px' }}>
           {gameInfoEl}
         </div>
+
       </div>
     );
   }
