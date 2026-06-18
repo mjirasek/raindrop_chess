@@ -54,10 +54,7 @@ Pushes to `main` deploy through GitHub Pages. The Vite build uses `/raindrop_che
 
 `https://michaeljirasek.com/raindrop_chess/`
 
-Configure these GitHub repository variables before deploying multiplayer:
-
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
+The Supabase URL and publishable browser key are in `.env.production` so GitHub Pages builds with multiplayer enabled. Do not put a Supabase service-role key in this repo or in the frontend build.
 
 ## Tech Stack
 
