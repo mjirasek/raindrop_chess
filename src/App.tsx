@@ -331,11 +331,19 @@ export default function App() {
     if (current > 0) setSnapshotCursor(current - 1);
   }, [snapshotCursor, snapshots.length]);
 
+  const handleFirst = useCallback(() => {
+    setSnapshotCursor(0);
+  }, []);
+
   const handleForward = useCallback(() => {
     if (snapshotCursor === null) return;
     if (snapshotCursor < snapshots.length - 1) setSnapshotCursor(snapshotCursor + 1);
     else setSnapshotCursor(null);
   }, [snapshotCursor, snapshots.length]);
+
+  const handleLast = useCallback(() => {
+    setSnapshotCursor(null);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -622,12 +630,18 @@ export default function App() {
         state={displayGame}
         notations={notations}
         cursor={listCursor}
+        clocks={clocks}
+        showClocks={showClocks && !isMobile}
+        clocksActive={clocksActive}
+        atLatest={atLatest}
         timePresets={TIME_PRESETS}
         timeControl={timeControl}
         onTimeControlChange={handleTimeControlChange}
         onNewGame={handleNewGame}
+        onFirst={handleFirst}
         onBack={handleBack}
         onForward={handleForward}
+        onLast={handleLast}
       />
       <MultiplayerPanel
         configured={hasSupabaseConfig}
@@ -714,7 +728,7 @@ export default function App() {
               color="black"
               active={blackActive}
               seconds={clocks.black}
-              showClock={showClocks}
+              showClock={false}
               clockActive={blackActive && atLatest && clocksActive}
             />
             <CardPile deck={displayGame.blackDecks} color="black" isActive={blackActive} canFlip={canBlackFlip} onFlipCard={handleFlipCard} layout="vertical" />
@@ -725,7 +739,7 @@ export default function App() {
               color="white"
               active={whiteActive}
               seconds={clocks.white}
-              showClock={showClocks}
+              showClock={false}
               clockActive={whiteActive && atLatest && clocksActive}
             />
             <CardPile deck={displayGame.whiteDecks} color="white" isActive={whiteActive} canFlip={canWhiteFlip} onFlipCard={handleFlipCard} layout="vertical" />

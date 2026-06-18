@@ -7,12 +7,18 @@ interface Props {
   state: GameState;
   notations: string[];
   cursor: number;
+  clocks: Record<Color, number>;
+  showClocks: boolean;
+  clocksActive: boolean;
+  atLatest: boolean;
   timePresets: TimeControl[];
   timeControl: TimeControl;
   onTimeControlChange: (tc: TimeControl) => void;
   onNewGame: () => void;
+  onFirst: () => void;
   onBack: () => void;
   onForward: () => void;
+  onLast: () => void;
 }
 
 const CARD_NAMES: Record<CardType, string> = {
@@ -22,7 +28,29 @@ const CARD_NAMES: Record<CardType, string> = {
 
 const PROMOTION_ROLES: CGRole[] = ['queen', 'rook', 'bishop', 'knight'];
 
-export default function GameInfo({ state, notations, cursor, timePresets, timeControl, onTimeControlChange, onNewGame, onBack, onForward }: Props) {
+function formatClock(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+export default function GameInfo({
+  state,
+  notations,
+  cursor,
+  clocks,
+  showClocks,
+  clocksActive,
+  atLatest,
+  timePresets,
+  timeControl,
+  onTimeControlChange,
+  onNewGame,
+  onFirst,
+  onBack,
+  onForward,
+  onLast,
+}: Props) {
   const { turn, turnMode, cardFlipped, gameOver, winner, inCheck, whiteDecks, blackDecks, promotionCounts } = state;
   const myDeck = turn === 'white' ? whiteDecks : blackDecks;
   const hasCards = myDeck.pile.length > 0;
@@ -59,6 +87,13 @@ export default function GameInfo({ state, notations, cursor, timePresets, timeCo
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', maxWidth: '420px' }}>
+      {showClocks && (
+        <SideClock
+          color="black"
+          seconds={clocks.black}
+          active={turn === 'black' && !gameOver && atLatest && clocksActive}
+        />
+      )}
 
       {/* Game over */}
       {gameOver && (
@@ -81,16 +116,21 @@ export default function GameInfo({ state, notations, cursor, timePresets, timeCo
 
       {/* Turn indicator */}
       {!gameOver && !isViewingHistory && (
-        <div style={{ background: '#262422', border: '1px solid #3d3b38', borderRadius: '8px', padding: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center', marginBottom: '6px' }}>
+        <div style={{ background: '#262421', border: '1px solid #3a3732', borderRadius: '6px', padding: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between', marginBottom: '6px' }}>
+            <span style={{ fontSize: '12px', color: '#8f8981', fontWeight: 700 }}>
+              {timeControl.label} · Raindrop
+            </span>
+            <span style={{ fontWeight: 700, fontSize: '12px', color: '#d5cec5' }}>{turnLabel} to move</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span style={{
               width: '12px', height: '12px', borderRadius: '50%', flexShrink: 0,
               background: turn === 'white' ? '#f0d9b5' : '#2a1a0e',
               border: `2px solid ${turn === 'white' ? '#b58863' : '#9a7050'}`,
             }} />
-            <span style={{ fontWeight: 700, fontSize: '13px', color: '#e0dbd4' }}>{turnLabel}'s turn</span>
+            <p style={{ fontSize: '12px', color: '#9c958c', margin: 0, lineHeight: '1.35' }}>{hint}</p>
           </div>
-          <p style={{ fontSize: '11px', color: '#6e6b67', textAlign: 'center', margin: 0, lineHeight: '1.4' }}>{hint}</p>
         </div>
       )}
 
@@ -102,7 +142,22 @@ export default function GameInfo({ state, notations, cursor, timePresets, timeCo
       )}
 
       {/* Move list */}
-      <MoveList notations={notations} cursor={cursor} onBack={onBack} onForward={onForward} />
+      <MoveList
+        notations={notations}
+        cursor={cursor}
+        onFirst={onFirst}
+        onBack={onBack}
+        onForward={onForward}
+        onLast={onLast}
+      />
+
+      {showClocks && (
+        <SideClock
+          color="white"
+          seconds={clocks.white}
+          active={turn === 'white' && !gameOver && atLatest && clocksActive}
+        />
+      )}
 
       {/* Promotion capacity */}
       <div style={{ background: '#262422', border: '1px solid #3d3b38', borderRadius: '8px', padding: '8px' }}>
@@ -185,6 +240,53 @@ function PromotionCount({ label, color, value, active }: { label: string; color:
           <PieceIcon key={role} role={role} color={color} />
         ))}
       </div>
+    </div>
+  );
+}
+
+function SideClock({ color, seconds, active }: { color: Color; seconds: number; active: boolean }) {
+  const low = seconds > 0 && seconds < 30;
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: '1fr auto',
+      alignItems: 'center',
+      gap: '10px',
+      background: active ? '#2f2d29' : '#25231f',
+      border: `1px solid ${active ? '#4d493f' : '#33302c'}`,
+      borderRadius: '6px',
+      padding: '8px 10px',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0 }}>
+        <span style={{
+          width: '9px',
+          height: '9px',
+          borderRadius: '50%',
+          background: active ? '#77a832' : '#5a554e',
+          flexShrink: 0,
+        }} />
+        <span style={{
+          color: active ? '#e0dbd4' : '#9b958e',
+          fontSize: '13px',
+          fontWeight: 700,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}>
+          {color === 'black' ? 'Black' : 'White'}
+        </span>
+      </div>
+      <span style={{
+        fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace',
+        color: low ? '#ff9944' : active ? '#e8e2da' : '#b9b2aa',
+        fontSize: '30px',
+        lineHeight: 1,
+        fontWeight: 500,
+        letterSpacing: 0,
+        fontVariantNumeric: 'tabular-nums',
+      }}>
+        {formatClock(seconds)}
+      </span>
     </div>
   );
 }

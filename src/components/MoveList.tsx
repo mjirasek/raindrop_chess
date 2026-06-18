@@ -1,20 +1,21 @@
-import { useEffect, useRef } from 'react';
+import { forwardRef, useEffect, useRef, type CSSProperties } from 'react';
 
 interface Props {
-  notations: string[];   // flat list: [white1, black1, white2, black2, ...]
-  cursor: number;        // current position (0 = initial, 1 = after first half-move, etc.)
+  notations: string[];
+  cursor: number;
+  onFirst: () => void;
   onBack: () => void;
   onForward: () => void;
+  onLast: () => void;
 }
 
-export default function MoveList({ notations, cursor, onBack, onForward }: Props) {
-  const activeRef = useRef<HTMLSpanElement>(null);
+export default function MoveList({ notations, cursor, onFirst, onBack, onForward, onLast }: Props) {
+  const activeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     activeRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [cursor]);
 
-  // Pair up into move rows: [[white, black?], ...]
   const rows: Array<{ n: number; white: string; black?: string }> = [];
   for (let i = 0; i < notations.length; i += 2) {
     rows.push({ n: Math.floor(i / 2) + 1, white: notations[i], black: notations[i + 1] });
@@ -24,75 +25,35 @@ export default function MoveList({ notations, cursor, onBack, onForward }: Props
   const canForward = cursor < notations.length;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-
-      {/* Navigation buttons */}
-      <div style={{ display: 'flex', gap: '6px' }}>
-        {[
-          { label: '⟨⟨', action: () => onBack(), disabled: !canBack, title: 'Back' },
-          { label: '⟩⟩', action: () => onForward(), disabled: !canForward, title: 'Forward' },
-        ].map(btn => (
-          <button
-            key={btn.label}
-            onClick={btn.action}
-            disabled={btn.disabled}
-            title={btn.title}
-            style={{
-              flex: 1, padding: '5px', borderRadius: '6px',
-              fontSize: '14px', fontWeight: 700, cursor: btn.disabled ? 'default' : 'pointer',
-              background: btn.disabled ? '#1a1816' : '#262422',
-              color: btn.disabled ? '#3d3b38' : '#9e9b96',
-              border: `1px solid ${btn.disabled ? '#2a2826' : '#3d3b38'}`,
-              transition: 'background 0.1s',
-            }}
-            onMouseEnter={e => { if (!btn.disabled) e.currentTarget.style.background = '#302e2c'; }}
-            onMouseLeave={e => { if (!btn.disabled) e.currentTarget.style.background = '#262422'; }}
-          >
-            {btn.label}
-          </button>
-        ))}
+    <div style={panelStyle}>
+      <div style={navStyle}>
+        <NavButton label="|<" title="First position" disabled={!canBack} onClick={onFirst} />
+        <NavButton label="<" title="Back" disabled={!canBack} onClick={onBack} />
+        <NavButton label=">" title="Forward" disabled={!canForward} onClick={onForward} />
+        <NavButton label=">|" title="Latest position" disabled={!canForward} onClick={onLast} />
+        <button type="button" title="Moves" style={{ ...navButtonStyle, cursor: 'default' }}>list</button>
       </div>
 
-      {/* Move list — fixed height so adding moves never shifts layout */}
-      <div
-        style={{
-          background: '#1a1816', border: '1px solid #3d3b38', borderRadius: '8px',
-          padding: '6px 4px', height: '150px', overflowY: 'auto',
-          fontSize: '11px', fontFamily: 'monospace',
-        }}
-      >
+      <div style={tableStyle}>
         {rows.length === 0 && (
-          <div style={{ color: '#4a4744', textAlign: 'center', padding: '12px 0' }}>No moves yet</div>
+          <div style={{ color: '#68645f', textAlign: 'center', padding: '28px 0', fontSize: '12px' }}>No moves yet</div>
         )}
         {rows.map(row => {
-          // cursor positions: white of row n = index 2*(n-1)+1, black = 2*(n-1)+2
           const whiteIdx = (row.n - 1) * 2 + 1;
           const blackIdx = (row.n - 1) * 2 + 2;
-          const whiteActive = cursor === whiteIdx;
-          const blackActive = cursor === blackIdx;
-
           return (
-            <div
-              key={row.n}
-              style={{
-                display: 'grid', gridTemplateColumns: '24px 1fr 1fr',
-                padding: '2px 6px', borderRadius: '4px',
-                background: (whiteActive || blackActive) ? '#1e2a0f' : 'transparent',
-              }}
-            >
-              <span style={{ color: '#4a4744' }}>{row.n}.</span>
-              <span
-                ref={whiteActive ? activeRef : undefined}
-                style={{ color: whiteActive ? '#a8d060' : '#9e9b96', padding: '0 2px' }}
-              >
-                {row.white}
-              </span>
-              <span
-                ref={blackActive ? activeRef : undefined}
-                style={{ color: blackActive ? '#a8d060' : '#9e9b96', padding: '0 2px' }}
-              >
-                {row.black ?? ''}
-              </span>
+            <div key={row.n} style={rowStyle}>
+              <span style={moveNumberStyle}>{row.n}</span>
+              <MoveCell
+                ref={cursor === whiteIdx ? activeRef : undefined}
+                active={cursor === whiteIdx}
+                text={row.white}
+              />
+              <MoveCell
+                ref={cursor === blackIdx ? activeRef : undefined}
+                active={cursor === blackIdx}
+                text={row.black ?? ''}
+              />
             </div>
           );
         })}
@@ -100,3 +61,107 @@ export default function MoveList({ notations, cursor, onBack, onForward }: Props
     </div>
   );
 }
+
+function NavButton({
+  label,
+  title,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  title: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        ...navButtonStyle,
+        color: disabled ? '#4b4742' : '#aaa49d',
+        cursor: disabled ? 'default' : 'pointer',
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+const MoveCell = forwardRef<HTMLButtonElement, {
+  text: string;
+  active: boolean;
+}>(({ text, active }, ref) => (
+  <button
+    ref={ref}
+    type="button"
+    style={{
+      minWidth: 0,
+      height: '26px',
+      border: 0,
+      borderRadius: '0',
+      padding: '0 10px',
+      textAlign: 'left',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap',
+      background: active ? '#2f4556' : 'transparent',
+      color: active ? '#dce8f3' : text ? '#d3cec7' : '#5b5650',
+      fontSize: '13px',
+      fontWeight: active ? 700 : 600,
+      cursor: 'default',
+    }}
+  >
+    {text}
+  </button>
+));
+
+MoveCell.displayName = 'MoveCell';
+
+const panelStyle: CSSProperties = {
+  background: '#1f1e1b',
+  border: '1px solid #33302c',
+  borderRadius: '6px',
+  overflow: 'hidden',
+};
+
+const navStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(5, 1fr)',
+  background: '#302e2a',
+  borderBottom: '1px solid #26231f',
+};
+
+const navButtonStyle: CSSProperties = {
+  height: '34px',
+  border: 0,
+  borderRight: '1px solid #3a3732',
+  background: 'transparent',
+  color: '#aaa49d',
+  fontSize: '11px',
+  fontWeight: 700,
+};
+
+const tableStyle: CSSProperties = {
+  height: '186px',
+  overflowY: 'auto',
+  fontFamily: 'Arial, sans-serif',
+};
+
+const rowStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '46px minmax(0, 1fr) minmax(0, 1fr)',
+  minHeight: '26px',
+};
+
+const moveNumberStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  background: '#26231f',
+  color: '#8a847d',
+  fontSize: '12px',
+  fontWeight: 600,
+};
