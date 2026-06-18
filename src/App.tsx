@@ -2,9 +2,30 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import ChessBoard from './components/ChessBoard';
 import CardPile from './components/CardPile';
 import GameInfo from './components/GameInfo';
+import MultiplayerPanel from './components/MultiplayerPanel';
 import PromotionDialog from './components/PromotionDialog';
 import { createInitialState, flipCard, placePiece, makeMove, completePromotion } from './gameState';
+import { hasSupabaseConfig, supabase } from './supabaseClient';
+import {
+  acceptChallenge,
+  clearOpenChallengesForUser,
+  createChallenge,
+  declineChallenge,
+  finishChallengeForGame,
+  getSessionUser,
+  listChallenges,
+  listProfiles,
+  loadGame,
+  replaceGameForChallenge,
+  signIn,
+  signOut,
+  stateFromGame,
+  type Challenge,
+  type GameRow,
+  type Profile,
+} from './multiplayer';
 import type { GameState, Square, CGRole, Color, CardType, CGPiece } from './types';
+import type { User } from '@supabase/supabase-js';
 
 // ── Notation helpers ──────────────────────────────────────────────────────────
 
@@ -29,6 +50,18 @@ function placeNotation(cardType: CardType, color: Color, sq: Square): string {
 
 function moveNotation(piece: CGPiece, from: Square, to: Square, captured: boolean): string {
   return `${SYM[piece.role][piece.color]}${sqName(from)}${captured ? '×' : '-'}${sqName(to)}`;
+}
+
+function colorName(color: Color): string {
+  return color === 'white' ? 'White' : 'Black';
+}
+
+function userMessage(error: unknown, fallback: string): string {
+  if (!(error instanceof Error)) return fallback;
+  if (error.message.includes('row-level security policy')) {
+    return 'Supabase policy blocks saving moves. Run the games update policy SQL, then reload both browsers.';
+  }
+  return error.message;
 }
 
 function formatClock(s: number): string {
@@ -97,6 +130,35 @@ function Clock({ seconds, active, large }: { seconds: number; active: boolean; l
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
+function PlayerLabel({
+  color,
+  active,
+  seconds,
+  showClock,
+  clockActive,
+}: {
+  color: Color;
+  active: boolean;
+  seconds: number;
+  showClock: boolean;
+  clockActive: boolean;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+      <span style={{
+        fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em',
+        padding: '2px 8px', borderRadius: '4px',
+        color: active ? '#a8d060' : '#6e6b67',
+        background: active ? '#1e2a0f' : 'transparent',
+        border: `1px solid ${active ? '#3a5a12' : 'transparent'}`,
+      }}>{color === 'black' ? 'Black' : 'White'}</span>
+      {showClock && (
+        <Clock seconds={seconds} active={clockActive} />
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const isMobile = useIsMobile();
   const initial = createInitialState();
@@ -110,13 +172,136 @@ export default function App() {
   const [clocks, setClocks] = useState({ white: 0, black: 0 });
   const [clocksActive, setClocksActive] = useState(false);
   const turnRef = useRef<Color>('white');
+  const [mpUser, setMpUser] = useState<User | null>(null);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [activeGame, setActiveGame] = useState<GameRow | null>(null);
+  const [mpStatus, setMpStatus] = useState('');
+  const [gameSyncStatus, setGameSyncStatus] = useState('');
+  const activeGameRef = useRef<GameRow | null>(null);
+  const savingGameRef = useRef(false);
 
   const atLatest = snapshotCursor === null;
   const displayGame = atLatest ? liveGame : snapshots[snapshotCursor!];
-  const interactive = atLatest && !liveGame.pendingPromotion;
+  const activeSeat: Color | null =
+    activeGame && mpUser?.id === activeGame.white_user_id ? 'white'
+      : activeGame && mpUser?.id === activeGame.black_user_id ? 'black'
+        : null;
+  const activeGameId = activeGame?.id ?? null;
+  const boardOrientation: Color = activeSeat ?? 'white';
+  const canAct = !activeGame || activeSeat === liveGame.turn;
+  const interactive = atLatest && !liveGame.pendingPromotion && canAct;
   const listCursor = atLatest ? notations.length : snapshotCursor!;
 
   useEffect(() => { turnRef.current = liveGame.turn; }, [liveGame.turn]);
+  useEffect(() => { activeGameRef.current = activeGame; }, [activeGame]);
+
+  const applySyncedGame = useCallback((row: GameRow) => {
+    setActiveGame(row);
+    const nextState = stateFromGame(row);
+    setLiveGame(nextState);
+    setSnapshots([nextState]);
+    setNotations(row.notations_json ?? []);
+    setSnapshotCursor(null);
+    setPendingNotation('');
+  }, []);
+
+  const refreshMultiplayer = useCallback(async () => {
+    if (!hasSupabaseConfig) return;
+    try {
+      const user = await getSessionUser();
+      setMpUser(user);
+      if (!user) {
+        setProfiles([]);
+        setChallenges([]);
+        return;
+      }
+      const [nextProfiles, nextChallenges] = await Promise.all([
+        listProfiles(),
+        listChallenges(user.id),
+      ]);
+      setProfiles(nextProfiles);
+      setChallenges(nextChallenges);
+    } catch (error) {
+      setMpStatus(error instanceof Error ? error.message : 'Could not refresh multiplayer');
+    }
+  }, []);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      void refreshMultiplayer();
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, [refreshMultiplayer]);
+
+  useEffect(() => {
+    if (!mpUser) return;
+    const interval = window.setInterval(() => {
+      void refreshMultiplayer();
+    }, 2000);
+
+    return () => window.clearInterval(interval);
+  }, [mpUser, refreshMultiplayer]);
+
+  useEffect(() => {
+    const client = supabase;
+    if (!client || !mpUser) return;
+
+    const channel = client
+      .channel(`challenges:${mpUser.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'challenges' }, () => {
+        void refreshMultiplayer();
+      })
+      .subscribe();
+
+    return () => {
+      void client.removeChannel(channel);
+    };
+  }, [mpUser, refreshMultiplayer]);
+
+  useEffect(() => {
+    const client = supabase;
+    if (!client || !activeGameId) return;
+
+    const channel = client
+      .channel(`game:${activeGameId}`)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${activeGameId}` }, payload => {
+        const row = payload.new as GameRow;
+        applySyncedGame(row);
+        setGameSyncStatus(`Live sync: v${row.version}`);
+      })
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED') setGameSyncStatus('Live sync connected');
+        else if (status === 'CHANNEL_ERROR') setGameSyncStatus('Live sync error; polling backup active');
+        else if (status === 'TIMED_OUT') setGameSyncStatus('Live sync timed out; polling backup active');
+      });
+
+    return () => {
+      void client.removeChannel(channel);
+    };
+  }, [activeGameId, applySyncedGame]);
+
+  useEffect(() => {
+    if (!activeGameId) return;
+
+    const interval = window.setInterval(() => {
+      if (savingGameRef.current) return;
+      void loadGame(activeGameId)
+        .then(row => {
+          const current = activeGameRef.current;
+          if (!current || row.version !== current.version || row.updated_at !== current.updated_at) {
+            applySyncedGame(row);
+            setGameSyncStatus(`Polled sync: v${row.version}`);
+          }
+        })
+        .catch(error => {
+          setGameSyncStatus(error instanceof Error ? error.message : 'Polling sync failed');
+        });
+    }, 1500);
+
+    return () => window.clearInterval(interval);
+  }, [activeGameId, applySyncedGame]);
 
   useEffect(() => {
     if (!clocksActive || liveGame.gameOver || timeControl.initial === 0) return;
@@ -131,10 +316,14 @@ export default function App() {
 
   useEffect(() => {
     if (!clocksActive || timeControl.initial === 0 || liveGame.gameOver) return;
-    if (clocks[liveGame.turn] === 0) {
+    if (clocks[liveGame.turn] !== 0) return;
+
+    const timeout = window.setTimeout(() => {
       const winner: Color = liveGame.turn === 'white' ? 'black' : 'white';
       setLiveGame(g => g.gameOver ? g : { ...g, gameOver: true, winner });
-    }
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
   }, [clocks, clocksActive, liveGame.turn, liveGame.gameOver, timeControl.initial]);
 
   const handleBack = useCallback(() => {
@@ -157,17 +346,44 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [handleBack, handleForward]);
 
-  function pushSnapshot(game: GameState, notation: string, movedColor: Color) {
+  const persistActiveGame = useCallback((game: GameState, nextNotations: string[], savingLabel = 'Saving move...') => {
+    if (activeGame) {
+      savingGameRef.current = true;
+      setGameSyncStatus(savingLabel);
+      replaceGameForChallenge(activeGame, game, nextNotations)
+        .then(row => {
+          setActiveGame(row);
+          setGameSyncStatus(`Saved via sync v${row.version}`);
+          return refreshMultiplayer();
+        })
+        .catch(error => {
+          setMpStatus(userMessage(error, 'Could not save game'));
+          setGameSyncStatus('Save failed');
+        })
+        .finally(() => {
+          savingGameRef.current = false;
+        });
+    }
+  }, [activeGame, refreshMultiplayer]);
+
+  const commitSnapshot = useCallback((game: GameState, notation: string) => {
+    const nextNotations = [...notations, notation];
     setLiveGame(game);
     setSnapshots(prev => [...prev, game]);
-    setNotations(prev => [...prev, notation]);
+    setNotations(nextNotations);
     setSnapshotCursor(null);
+    persistActiveGame(game, nextNotations);
+  }, [notations, persistActiveGame]);
+
+  const pushSnapshot = useCallback((game: GameState, notation: string, movedColor: Color) => {
+    const nextGame = game.drawOfferBy ? { ...game, drawOfferBy: null } : game;
+    commitSnapshot(nextGame, notation);
     if (timeControl.initial > 0) {
       setClocksActive(true);
       if (timeControl.increment > 0)
         setClocks(prev => ({ ...prev, [movedColor]: prev[movedColor] + timeControl.increment }));
     }
-  }
+  }, [commitSnapshot, timeControl.initial, timeControl.increment]);
 
   const handleNewGame = useCallback(() => {
     const s = createInitialState();
@@ -181,6 +397,153 @@ export default function App() {
     setClocks({ white: tc.initial, black: tc.initial });
   }, []);
 
+  const loadMultiplayerGame = useCallback((row: GameRow) => {
+    applySyncedGame(row);
+    setClocksActive(false);
+  }, [applySyncedGame]);
+
+  const handleMpSignIn = useCallback(async (email: string, password: string) => {
+    setMpStatus('Signing in...');
+    const user = await signIn(email, password);
+    setMpUser(user);
+    setMpStatus('Signed in');
+    await refreshMultiplayer();
+  }, [refreshMultiplayer]);
+
+  const handleMpSignOut = useCallback(async () => {
+    await signOut();
+    setMpUser(null);
+    setProfiles([]);
+    setChallenges([]);
+    setActiveGame(null);
+    setGameSyncStatus('');
+    setMpStatus('Signed out');
+  }, []);
+
+  const handleCreateChallenge = useCallback(async (opponentId: string) => {
+    if (!mpUser) return;
+    try {
+      setMpStatus('Sending challenge...');
+      await createChallenge(mpUser.id, opponentId);
+      setMpStatus('Challenge sent');
+      setActiveGame(null);
+      setGameSyncStatus('');
+      await refreshMultiplayer();
+    } catch (error) {
+      setMpStatus(error instanceof Error ? error.message : 'Could not send challenge');
+    }
+  }, [mpUser, refreshMultiplayer]);
+
+  const handleAcceptChallenge = useCallback(async (challenge: Challenge) => {
+    try {
+      setMpStatus('Creating game...');
+      const row = await acceptChallenge(challenge);
+      loadMultiplayerGame(row);
+      setMpStatus('Challenge accepted');
+      await refreshMultiplayer();
+    } catch (error) {
+      setMpStatus(error instanceof Error ? error.message : 'Could not accept challenge');
+    }
+  }, [loadMultiplayerGame, refreshMultiplayer]);
+
+  const handleDeclineChallenge = useCallback(async (challengeId: string) => {
+    try {
+      await declineChallenge(challengeId);
+      setMpStatus('Challenge declined');
+      await refreshMultiplayer();
+    } catch (error) {
+      setMpStatus(error instanceof Error ? error.message : 'Could not decline challenge');
+    }
+  }, [refreshMultiplayer]);
+
+  const handleOpenGame = useCallback(async (gameId: string) => {
+    try {
+      const row = await loadGame(gameId);
+      loadMultiplayerGame(row);
+      setMpStatus('Game loaded');
+    } catch (error) {
+      setMpStatus(error instanceof Error ? error.message : 'Could not open game');
+    }
+  }, [loadMultiplayerGame]);
+
+  const handleClearChallengeQueue = useCallback(async () => {
+    if (!mpUser) return;
+    try {
+      setMpStatus('Clearing queue...');
+      await clearOpenChallengesForUser(mpUser.id);
+      setActiveGame(null);
+      setGameSyncStatus('');
+      handleNewGame();
+      await refreshMultiplayer();
+      setMpStatus('Queue cleared');
+    } catch (error) {
+      setMpStatus(error instanceof Error ? error.message : 'Could not clear queue');
+    }
+  }, [handleNewGame, mpUser, refreshMultiplayer]);
+
+  const closeActiveGameChallenge = useCallback(async () => {
+    if (!activeGame) return;
+    try {
+      await finishChallengeForGame(activeGame.id);
+      await refreshMultiplayer();
+    } catch (error) {
+      setMpStatus(error instanceof Error ? error.message : 'Could not close game challenge');
+    }
+  }, [activeGame, refreshMultiplayer]);
+
+  const handleLeaveMultiplayerGame = useCallback(async () => {
+    setActiveGame(null);
+    setGameSyncStatus('');
+    handleNewGame();
+    await refreshMultiplayer();
+  }, [handleNewGame, refreshMultiplayer]);
+
+  const handleResign = useCallback(async () => {
+    if (!activeGame || !activeSeat || liveGame.gameOver) return;
+    if (!window.confirm('Resign this game?')) return;
+    const winner: Color = activeSeat === 'white' ? 'black' : 'white';
+    commitSnapshot(
+      { ...liveGame, gameOver: true, winner, drawOfferBy: null, pendingPromotion: null },
+      `${colorName(activeSeat)} resigns`,
+    );
+    void closeActiveGameChallenge();
+    setMpStatus('Game resigned');
+  }, [activeGame, activeSeat, closeActiveGameChallenge, commitSnapshot, liveGame]);
+
+  const handleOfferOrAcceptDraw = useCallback(async () => {
+    if (!activeGame || !activeSeat || liveGame.gameOver) return;
+    if (liveGame.drawOfferBy && liveGame.drawOfferBy !== activeSeat) {
+      commitSnapshot(
+        { ...liveGame, gameOver: true, winner: null, drawOfferBy: null, pendingPromotion: null },
+        'Draw agreed',
+      );
+      void closeActiveGameChallenge();
+      setMpStatus('Draw accepted');
+      return;
+    }
+    if (liveGame.drawOfferBy === activeSeat) return;
+    commitSnapshot({ ...liveGame, drawOfferBy: activeSeat }, `${colorName(activeSeat)} offers draw`);
+    setMpStatus('Draw offered');
+  }, [activeGame, activeSeat, closeActiveGameChallenge, commitSnapshot, liveGame]);
+
+  const handleDeclineDraw = useCallback(async () => {
+    if (!activeGame || !activeSeat || liveGame.gameOver) return;
+    if (liveGame.drawOfferBy === activeSeat || !liveGame.drawOfferBy) return;
+    commitSnapshot({ ...liveGame, drawOfferBy: null }, `${colorName(activeSeat)} declines draw`);
+    setMpStatus('Draw declined');
+  }, [activeGame, activeSeat, commitSnapshot, liveGame]);
+
+  useEffect(() => {
+    if (!mpUser) return;
+    const accepted = challenges.find(challenge => challenge.status === 'accepted' && challenge.game_id);
+    if (!accepted?.game_id || accepted.game_id === activeGameId) return;
+    const timeout = window.setTimeout(() => {
+      void handleOpenGame(accepted.game_id!);
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, [activeGameId, challenges, handleOpenGame, mpUser]);
+
   const handleFlipCard = useCallback(() => {
     if (!atLatest) return;
     const next = flipCard(liveGame);
@@ -192,8 +555,9 @@ export default function App() {
       pushSnapshot(next, notation, liveGame.turn);
     } else {
       setLiveGame(next);
+      persistActiveGame(next, notations, 'Saving card...');
     }
-  }, [atLatest, liveGame]);
+  }, [atLatest, liveGame, notations, persistActiveGame, pushSnapshot]);
 
   const handleSquareClickDirect = useCallback((sq: Square) => {
     if (!interactive) return;
@@ -202,7 +566,7 @@ export default function App() {
     const card = deck.revealed!;
     const movedColor = liveGame.turn;
     pushSnapshot(placePiece(liveGame, sq), placeNotation(card.type, liveGame.turn, sq), movedColor);
-  }, [interactive, liveGame]);
+  }, [interactive, liveGame, pushSnapshot]);
 
   const handleMove = useCallback((from: Square, to: Square) => {
     if (!interactive) return;
@@ -213,7 +577,7 @@ export default function App() {
     const next = makeMove(liveGame, from, to);
     if (next.pendingPromotion) { setPendingNotation(notation); setLiveGame(next); }
     else pushSnapshot(next, notation, movedColor);
-  }, [interactive, liveGame]);
+  }, [interactive, liveGame, pushSnapshot]);
 
   const handlePromotion = useCallback((role: CGRole) => {
     const movedColor = liveGame.turn;
@@ -221,12 +585,12 @@ export default function App() {
     const next = completePromotion(liveGame, role);
     setPendingNotation('');
     pushSnapshot(next, notation, movedColor);
-  }, [liveGame, pendingNotation]);
+  }, [liveGame, pendingNotation, pushSnapshot]);
 
   const canWhiteFlip = atLatest && !liveGame.gameOver && liveGame.turn === 'white' &&
-    !liveGame.cardFlipped && liveGame.turnMode !== 'must-move' && liveGame.whiteDecks.pile.length > 0;
+    canAct && !liveGame.cardFlipped && liveGame.turnMode !== 'must-move' && liveGame.whiteDecks.pile.length > 0;
   const canBlackFlip = atLatest && !liveGame.gameOver && liveGame.turn === 'black' &&
-    !liveGame.cardFlipped && liveGame.turnMode !== 'must-move' && liveGame.blackDecks.pile.length > 0;
+    canAct && !liveGame.cardFlipped && liveGame.turnMode !== 'must-move' && liveGame.blackDecks.pile.length > 0;
 
   const blackActive = displayGame.turn === 'black' && !displayGame.gameOver;
   const whiteActive = displayGame.turn === 'white' && !displayGame.gameOver;
@@ -235,25 +599,61 @@ export default function App() {
   // ── Board + promotion overlay (shared) ──────────────────────────────────────
   const boardEl = (
     <div style={{ position: 'relative' }}>
-      <ChessBoard state={displayGame} onSquareClick={handleSquareClickDirect} onMove={handleMove} interactive={interactive} />
+      <ChessBoard
+        state={displayGame}
+        onSquareClick={handleSquareClickDirect}
+        onMove={handleMove}
+        interactive={interactive}
+        orientation={boardOrientation}
+      />
       {liveGame.pendingPromotion && atLatest && (
-        <PromotionDialog color={liveGame.turn} onSelect={handlePromotion} />
+        <PromotionDialog
+          color={liveGame.turn}
+          promotionsUsed={liveGame.promotionCounts[liveGame.turn]}
+          onSelect={handlePromotion}
+        />
       )}
     </div>
   );
 
   const gameInfoEl = (
-    <GameInfo
-      state={displayGame}
-      notations={notations}
-      cursor={listCursor}
-      timePresets={TIME_PRESETS}
-      timeControl={timeControl}
-      onTimeControlChange={handleTimeControlChange}
-      onNewGame={handleNewGame}
-      onBack={handleBack}
-      onForward={handleForward}
-    />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%', maxWidth: '420px' }}>
+      <GameInfo
+        state={displayGame}
+        notations={notations}
+        cursor={listCursor}
+        timePresets={TIME_PRESETS}
+        timeControl={timeControl}
+        onTimeControlChange={handleTimeControlChange}
+        onNewGame={handleNewGame}
+        onBack={handleBack}
+        onForward={handleForward}
+      />
+      <MultiplayerPanel
+        configured={hasSupabaseConfig}
+        user={mpUser}
+        profiles={profiles}
+        challenges={challenges}
+        activeGame={activeGame}
+        activeSeat={activeSeat}
+        gameOver={liveGame.gameOver}
+        drawOfferBy={liveGame.drawOfferBy}
+        status={mpStatus}
+        syncStatus={gameSyncStatus}
+        onSignIn={handleMpSignIn}
+        onSignOut={handleMpSignOut}
+        onCreateChallenge={handleCreateChallenge}
+        onAcceptChallenge={handleAcceptChallenge}
+        onDeclineChallenge={handleDeclineChallenge}
+        onOpenGame={handleOpenGame}
+        onRefresh={refreshMultiplayer}
+        onClearQueue={handleClearChallengeQueue}
+        onResign={handleResign}
+        onOfferOrAcceptDraw={handleOfferOrAcceptDraw}
+        onDeclineDraw={handleDeclineDraw}
+        onLeaveGame={handleLeaveMultiplayerGame}
+      />
+    </div>
   );
 
   // ── MOBILE layout ────────────────────────────────────────────────────────────
@@ -295,22 +695,6 @@ export default function App() {
   }
 
   // ── DESKTOP layout ───────────────────────────────────────────────────────────
-  function DesktopPlayerLabel({ color, active }: { color: Color; active: boolean }) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-        <span style={{
-          fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em',
-          padding: '2px 8px', borderRadius: '4px',
-          color: active ? '#a8d060' : '#6e6b67',
-          background: active ? '#1e2a0f' : 'transparent',
-          border: `1px solid ${active ? '#3a5a12' : 'transparent'}`,
-        }}>{color === 'black' ? '⬛ Black' : '⬜ White'}</span>
-        {showClocks && (
-          <Clock seconds={clocks[color]} active={active && atLatest && clocksActive} />
-        )}
-      </div>
-    );
-  }
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: '#161512', color: '#bababa' }}>
@@ -326,12 +710,24 @@ export default function App() {
       <main style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px', gap: '20px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '96px 1fr 96px', gap: '16px', alignItems: 'center', width: '100%', maxWidth: '752px' }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-            <DesktopPlayerLabel color="black" active={blackActive} />
+            <PlayerLabel
+              color="black"
+              active={blackActive}
+              seconds={clocks.black}
+              showClock={showClocks}
+              clockActive={blackActive && atLatest && clocksActive}
+            />
             <CardPile deck={displayGame.blackDecks} color="black" isActive={blackActive} canFlip={canBlackFlip} onFlipCard={handleFlipCard} layout="vertical" />
           </div>
           {boardEl}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-            <DesktopPlayerLabel color="white" active={whiteActive} />
+            <PlayerLabel
+              color="white"
+              active={whiteActive}
+              seconds={clocks.white}
+              showClock={showClocks}
+              clockActive={whiteActive && atLatest && clocksActive}
+            />
             <CardPile deck={displayGame.whiteDecks} color="white" isActive={whiteActive} canFlip={canWhiteFlip} onFlipCard={handleFlipCard} layout="vertical" />
           </div>
         </div>

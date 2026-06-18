@@ -4,6 +4,8 @@ A browser-based implementation of [Raindrop Chess](https://raindropchess.com/gam
 
 ## How to Play
 
+For the full implemented rules, including check handling and promotion behavior, see [docs/RAINDROP_RULES.md](docs/RAINDROP_RULES.md).
+
 ### Setup
 Each player starts with a shuffled deck of 16 cards:
 - 1 King, 1 Queen, 2 Rooks, 2 Knights, 1 Light-square Bishop, 1 Dark-square Bishop, 8 Pawns
@@ -37,12 +39,25 @@ npm run dev
 
 Open the URL printed in the terminal. Two players share the same screen (hot-seat).
 
+For a simple two-device multiplayer deployment plan, see [docs/MULTIPLAYER_DEPLOYMENT_PLAN.md](docs/MULTIPLAYER_DEPLOYMENT_PLAN.md).
+
 ## Building for Production
 
 ```bash
 npm run build
 npm run preview
 ```
+
+## Deployment
+
+Pushes to `main` deploy through GitHub Pages. The Vite build uses `/raindrop_chess/` as its production base path, so the expected project URL is:
+
+`https://michaeljirasek.com/raindrop_chess/`
+
+Configure these GitHub repository variables before deploying multiplayer:
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
 
 ## Tech Stack
 

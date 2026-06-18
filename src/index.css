@@ -8,7 +8,7 @@
    produces a desaturated tan instead of the warm Lichess brown. */
 cg-board {
   background-color: #b58863;
-  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 2 2' shapeRendering='crispEdges'><rect x='1' y='0' width='1' height='1' fill='%23f0d9b5'/><rect x='0' y='1' width='1' height='1' fill='%23f0d9b5'/></svg>");
+  background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 2 2' shapeRendering='crispEdges'><rect x='0' y='0' width='1' height='1' fill='%23f0d9b5'/><rect x='1' y='1' width='1' height='1' fill='%23f0d9b5'/></svg>");
   background-size: 25%;
 }
 
@@ -36,6 +36,23 @@ body {
   width: 100% !important;
   height: 100% !important;
   padding-bottom: 0 !important;
+}
+
+.promotion-piece-icon {
+  display: inline-block;
+  position: relative;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.promotion-piece-icon piece {
+  display: block;
+  position: static !important;
+  width: 100% !important;
+  height: 100% !important;
+  background-size: cover;
+  pointer-events: none;
 }
 
 /* Card flip animation */

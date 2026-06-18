@@ -15,6 +15,7 @@ export function createInitialState(): GameState {
     board: new Map(),
     whiteDecks: makeDeck(),
     blackDecks: makeDeck(),
+    promotionCounts: { white: 0, black: 0 },
     turn: 'white',
     turnMode: 'must-place',
     cardFlipped: false,
@@ -25,6 +26,7 @@ export function createInitialState(): GameState {
     inCheck: false,
     gameOver: false,
     winner: null,
+    drawOfferBy: null,
     pendingPromotion: null,
   };
 }
@@ -135,9 +137,14 @@ export function completePromotion(state: GameState, role: CGRole): GameState {
   const piece = newBoard.get(to);
   if (!piece) return state;
   newBoard.set(to, { ...piece, role });
+  const promotedColor = piece.color;
   return resolveNextTurn({
     ...state,
     board: newBoard,
+    promotionCounts: {
+      ...state.promotionCounts,
+      [promotedColor]: state.promotionCounts[promotedColor] + 1,
+    },
     turn: opposite(state.turn),
     pendingPromotion: null,
     cardFlipped: false,

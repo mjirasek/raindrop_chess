@@ -2,9 +2,9 @@ import { useEffect, useRef } from 'react';
 import { Chessground } from 'chessground';
 import type { Api } from 'chessground/api';
 import type { Config } from 'chessground/config';
-import type { Key, Piece as CGLibPiece } from 'chessground/types';
+import type { Key, Piece as CGLibPiece, PiecesDiff, SquareClasses } from 'chessground/types';
 import { squareToCgKey, cgKeyToSquare } from '../chessEngine';
-import type { GameState, Color, Square } from '../types';
+import type { GameState, CGPiece, Square, Color } from '../types';
 
 interface Props {
   state: GameState;
@@ -12,12 +12,13 @@ interface Props {
   onMove: (from: Square, to: Square) => void;
   /** False when viewing history or promotion pending — disables all board interaction */
   interactive: boolean;
+  orientation: Color;
 }
 
-function buildCGPieces(board: Map<Square, { role: string; color: Color }>): Map<Key, CGLibPiece> {
+function buildCGPieces(board: Map<Square, CGPiece>): Map<Key, CGLibPiece> {
   const map = new Map<Key, CGLibPiece>();
   for (const [sq, piece] of board) {
-    map.set(squareToCgKey(sq) as Key, { role: piece.role as any, color: piece.color });
+    map.set(squareToCgKey(sq) as Key, { role: piece.role, color: piece.color });
   }
   return map;
 }
@@ -30,15 +31,21 @@ function buildDests(legalMoves: Map<Square, Square[]>): Map<Key, Key[]> {
   return dests;
 }
 
-export default function ChessBoard({ state, onSquareClick, onMove, interactive }: Props) {
+export default function ChessBoard({ state, onSquareClick, onMove, interactive, orientation }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const cgRef = useRef<Api | null>(null);
 
   const onSquareClickRef = useRef(onSquareClick);
-  onSquareClickRef.current = onSquareClick;
 
   const onMoveRef = useRef(onMove);
-  onMoveRef.current = onMove;
+
+  useEffect(() => {
+    onSquareClickRef.current = onSquareClick;
+  }, [onSquareClick]);
+
+  useEffect(() => {
+    onMoveRef.current = onMove;
+  }, [onMove]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -46,7 +53,7 @@ export default function ChessBoard({ state, onSquareClick, onMove, interactive }
 
     const cg = Chessground(el, {
       fen: '8/8/8/8/8/8/8/8',
-      orientation: 'white',
+      orientation,
       coordinates: true,
       movable: { free: false, showDests: false, color: undefined },
       selectable: { enabled: false },
@@ -69,7 +76,7 @@ export default function ChessBoard({ state, onSquareClick, onMove, interactive }
       cg.destroy();
       cgRef.current = null;
     };
-  }, []);
+  }, [orientation]);
 
   useEffect(() => {
     const cg = cgRef.current;
@@ -83,15 +90,16 @@ export default function ChessBoard({ state, onSquareClick, onMove, interactive }
       !state.cardFlipped &&
       !state.gameOver;
 
-    const customHighlights = new Map<Key, Set<string>>();
+    const customHighlights: SquareClasses = new Map();
     if (isPlacing) {
       for (const sq of state.legalPlacementSquares) {
-        customHighlights.set(squareToCgKey(sq) as Key, new Set(['move-dest']));
+        customHighlights.set(squareToCgKey(sq) as Key, 'move-dest');
       }
     }
 
     const config: Config = {
-      check: state.inCheck ? (state.turn as any) : undefined,
+      orientation,
+      check: state.inCheck ? state.turn : undefined,
       turnColor: state.turn,
       movable: {
         free: false,
@@ -103,7 +111,7 @@ export default function ChessBoard({ state, onSquareClick, onMove, interactive }
       highlight: {
         lastMove: false,
         check: true,
-        custom: customHighlights as any,
+        custom: customHighlights,
       },
       draggable: { enabled: isMoving },
     };
@@ -116,14 +124,14 @@ export default function ChessBoard({ state, onSquareClick, onMove, interactive }
     const desired = buildCGPieces(state.board);
     const current = cg.state.pieces;
     const allKeys = new Set([...current.keys(), ...desired.keys()]);
-    const diff = new Map<Key, CGLibPiece | undefined>();
+    const diff: PiecesDiff = new Map();
     for (const key of allKeys) {
       const cur = current.get(key);
       const des = desired.get(key);
       if (JSON.stringify(cur) !== JSON.stringify(des)) diff.set(key, des);
     }
-    if (diff.size > 0) cg.setPieces(diff as any);
-  }, [state, interactive]);
+    if (diff.size > 0) cg.setPieces(diff);
+  }, [state, interactive, orientation]);
 
   return (
     <div

@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "test": "vitest run",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.108.2",
     "chessground": "^9.2.1",
     "chessops": "^0.15.0",
     "react": "^19.2.6",
@@ -29,6 +31,7 @@
     "tailwindcss": "^4.3.1",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "vitest": "^4.1.9"
   }
 }

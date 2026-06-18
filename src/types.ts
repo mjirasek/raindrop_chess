@@ -38,6 +38,7 @@ export interface GameState {
   board: Map<Square, CGPiece>;
   whiteDecks: Deck;
   blackDecks: Deck;
+  promotionCounts: Record<Color, number>;
   turn: Color;
   turnMode: TurnMode;
   cardFlipped: boolean;
@@ -48,6 +49,7 @@ export interface GameState {
   inCheck: boolean;
   gameOver: boolean;
   winner: Color | null;
+  drawOfferBy: Color | null;
   /** Set when a pawn reaches the back rank; cleared after promotion choice */
   pendingPromotion: { from: Square; to: Square } | null;
 }

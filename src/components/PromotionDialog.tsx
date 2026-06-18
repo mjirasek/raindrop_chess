@@ -2,6 +2,7 @@ import type { Color, CGRole } from '../types';
 
 interface Props {
   color: Color;
+  promotionsUsed: number;
   onSelect: (role: CGRole) => void;
 }
 
@@ -16,7 +17,9 @@ const SYMBOLS: Record<CGRole, { white: string; black: string }> = {
   pawn:   { white: '♙', black: '♟' },
 };
 
-export default function PromotionDialog({ color, onSelect }: Props) {
+export default function PromotionDialog({ color, promotionsUsed, onSelect }: Props) {
+  const remainingAfterThis = Math.max(0, 8 - promotionsUsed - 1);
+
   return (
     <div
       style={{
@@ -35,6 +38,9 @@ export default function PromotionDialog({ color, onSelect }: Props) {
       >
         <div style={{ color: '#a8d060', fontWeight: 700, fontSize: '13px', marginBottom: '14px', letterSpacing: '0.05em' }}>
           PAWN PROMOTION
+        </div>
+        <div style={{ color: '#9e9b96', fontSize: '11px', marginBottom: '12px' }}>
+          {remainingAfterThis} promotion{remainingAfterThis === 1 ? '' : 's'} left after this
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
           {CHOICES.map(role => (
