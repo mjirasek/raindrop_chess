@@ -61,16 +61,11 @@ export default function GameInfo({
   onOfferOrAcceptDraw,
   onDeclineDraw,
 }: Props) {
-  const { turn, turnMode, cardFlipped, gameOver, winner, inCheck, whiteDecks, blackDecks, promotionCounts } = state;
+  const { turn, turnMode, cardFlipped, gameOver, winner, inCheck, whiteDecks, blackDecks } = state;
   const myDeck = turn === 'white' ? whiteDecks : blackDecks;
   const hasCards = myDeck.pile.length > 0;
   const turnLabel = turn === 'white' ? 'White' : 'Black';
   const gameStarted = notations.length > 0;
-  const promotionsLeft = {
-    white: Math.max(0, 8 - promotionCounts.white),
-    black: Math.max(0, 8 - promotionCounts.black),
-  };
-
   let hint: React.ReactNode = null;
   if (!gameOver) {
     if (turnMode === 'must-place') {
@@ -152,7 +147,6 @@ export default function GameInfo({
           seconds={clocks.black}
           showClock={showClocks}
           active={turn === 'black' && !gameOver && atLatest && clocksActive}
-          promotionsLeft={promotionsLeft.black}
         />
         <MoveList
           notations={notations}
@@ -178,7 +172,6 @@ export default function GameInfo({
           seconds={clocks.white}
           showClock={showClocks}
           active={turn === 'white' && !gameOver && atLatest && clocksActive}
-          promotionsLeft={promotionsLeft.white}
         />
       </div>
 
@@ -239,24 +232,13 @@ function PromotionOption({ role, color }: { role: CGRole; color: Color }) {
   );
 }
 
-function PromotionBox({ color, promotionsLeft }: { color: Color; promotionsLeft: number }) {
+function PromotionBox({ color }: { color: Color }) {
   return (
     <div style={promotionBoxStyle}>
       <div style={promotionBoxTitleStyle}>Promotions</div>
       <div style={promotionChoicesStyle}>
         {PROMOTION_ROLES.map(role => (
           <PromotionOption key={role} role={role} color={color} />
-        ))}
-      </div>
-      <div style={promotionSlotsStyle} aria-label={`${promotionsLeft} promotions available`}>
-        {Array.from({ length: 8 }, (_, index) => (
-          <span
-            key={index}
-            style={{
-              ...promotionSlotStyle,
-              opacity: index < promotionsLeft ? 1 : 0.25,
-            }}
-          />
         ))}
       </div>
     </div>
@@ -343,13 +325,11 @@ function PlayerSideBand({
   seconds,
   showClock,
   active,
-  promotionsLeft,
 }: {
   color: Color;
   seconds: number;
   showClock: boolean;
   active: boolean;
-  promotionsLeft: number;
 }) {
   const low = seconds > 0 && seconds < 30;
   return (
@@ -383,7 +363,7 @@ function PlayerSideBand({
             {color === 'black' ? 'Black' : 'White'}
           </span>
         </div>
-        <PromotionBox color={color} promotionsLeft={promotionsLeft} />
+        <PromotionBox color={color} />
       </div>
       {showClock && (
       <span style={{
@@ -453,20 +433,6 @@ const promotionChoicesStyle: React.CSSProperties = {
   alignItems: 'center',
   gap: '3px',
   minWidth: 0,
-};
-
-const promotionSlotsStyle: React.CSSProperties = {
-  gridColumn: '1 / -1',
-  display: 'grid',
-  gridTemplateColumns: 'repeat(8, 8px)',
-  gap: '3px',
-};
-
-const promotionSlotStyle: React.CSSProperties = {
-  width: '8px',
-  height: '8px',
-  borderRadius: '50%',
-  background: '#8f8981',
 };
 
 const promotionOptionStyle: React.CSSProperties = {
