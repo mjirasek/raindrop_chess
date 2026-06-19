@@ -18,6 +18,16 @@ export interface EngineStep {
   state: GameState;
 }
 
+export interface RandomEnginePolicy {
+  flipCardWeight: number;
+  moveWeight: number;
+}
+
+export const DEFAULT_RANDOM_ENGINE_POLICY: RandomEnginePolicy = {
+  flipCardWeight: 1,
+  moveWeight: 1,
+};
+
 function currentDeckHasCards(state: GameState): boolean {
   return (state.turn === 'white' ? state.whiteDecks : state.blackDecks).pile.length > 0;
 }
@@ -53,9 +63,26 @@ export function legalEngineActions(state: GameState): EngineAction[] {
 export function chooseRandomEngineAction(
   state: GameState,
   random: () => number = Math.random,
+  policy: RandomEnginePolicy = DEFAULT_RANDOM_ENGINE_POLICY,
 ): EngineAction | null {
   const actions = legalEngineActions(state);
   if (actions.length === 0) return null;
+
+  const flipActions = actions.filter(action => action.kind === 'flip-card');
+  const moveActions = actions.filter(action => action.kind === 'move-piece');
+  const forcedActions = actions.filter(action => action.kind !== 'flip-card' && action.kind !== 'move-piece');
+
+  if (forcedActions.length > 0) {
+    return forcedActions[Math.floor(random() * forcedActions.length)];
+  }
+
+  if (flipActions.length > 0 && moveActions.length > 0) {
+    const total = policy.flipCardWeight + policy.moveWeight;
+    const bucket = random() * total;
+    const candidates = bucket < policy.flipCardWeight ? flipActions : moveActions;
+    return candidates[Math.floor(random() * candidates.length)];
+  }
+
   return actions[Math.floor(random() * actions.length)];
 }
 
@@ -75,26 +102,28 @@ export function applyEngineAction(state: GameState, action: EngineAction): GameS
 export function playRandomEngineStep(
   state: GameState,
   random: () => number = Math.random,
+  policy: RandomEnginePolicy = DEFAULT_RANDOM_ENGINE_POLICY,
 ): EngineStep {
-  const action = chooseRandomEngineAction(state, random);
+  const action = chooseRandomEngineAction(state, random, policy);
   return { action, state: action ? applyEngineAction(state, action) : state };
 }
 
 export function playRandomEngineTurn(
   state: GameState,
   random: () => number = Math.random,
+  policy: RandomEnginePolicy = DEFAULT_RANDOM_ENGINE_POLICY,
 ): EngineStep {
-  const first = chooseRandomEngineAction(state, random);
+  const first = chooseRandomEngineAction(state, random, policy);
   if (!first) return { action: null, state };
 
   let next = applyEngineAction(state, first);
   if (first.kind === 'flip-card' && next.cardFlipped) {
-    const placement = chooseRandomEngineAction(next, random);
+    const placement = chooseRandomEngineAction(next, random, policy);
     if (placement?.kind === 'place-piece') next = applyEngineAction(next, placement);
   }
 
   if (next.pendingPromotion) {
-    const promotion = chooseRandomEngineAction(next, random);
+    const promotion = chooseRandomEngineAction(next, random, policy);
     if (promotion?.kind === 'promote') next = applyEngineAction(next, promotion);
   }
 
