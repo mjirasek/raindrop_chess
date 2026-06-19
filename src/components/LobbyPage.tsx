@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
 import type { Challenge, GameRow, LobbyMessage, Profile } from '../multiplayer';
 import LobbyChat from './LobbyChat';
@@ -31,6 +31,23 @@ interface Props {
 
 function nameFor(profile?: Profile): string {
   return profile?.display_name ?? profile?.username ?? 'Unknown';
+}
+
+function lastActiveText(profile: Profile, online: boolean, now: number): string {
+  if (online) return 'online now';
+  if (!profile.last_seen_at) return 'last seen unknown';
+
+  const seen = Date.parse(profile.last_seen_at);
+  if (!Number.isFinite(seen)) return 'last seen unknown';
+
+  const seconds = Math.max(0, Math.floor((now - seen) / 1000));
+  if (seconds < 60) return 'last seen just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `last seen ${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `last seen ${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `last seen ${days}d ago`;
 }
 
 function gameResult(game: GameRow, userId?: string): string {
@@ -71,6 +88,7 @@ export default function LobbyPage({
   const [password, setPassword] = useState('');
   const [guestInput, setGuestInput] = useState('Guest');
   const [playerSearch, setPlayerSearch] = useState('');
+  const [now, setNow] = useState(() => Date.now());
 
   const profileById = useMemo(() => new Map(profiles.map(profile => [profile.id, profile])), [profiles]);
   const opponents = user ? profiles.filter(profile => profile.id !== user.id) : [];
@@ -86,6 +104,11 @@ export default function LobbyPage({
   const currentGames = games.filter(game => !game.state_json.gameOver).slice(0, 4);
   const completedGames = games.filter(game => game.state_json.gameOver).slice(0, 8);
   const canChallenge = Boolean(user && !activeGame);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 60000);
+    return () => window.clearInterval(id);
+  }, []);
 
   return (
     <main style={pageStyle}>
@@ -141,7 +164,10 @@ export default function LobbyPage({
                 <div key={profile.id} style={playerChallengeRowStyle}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '7px', minWidth: 0 }}>
                     <span style={onlineSet.has(profile.id) ? onlineDotStyle : offlineDotStyle} />
-                    <span style={bodyText}>{profile.display_name}</span>
+                    <span style={playerNameBlockStyle}>
+                      <span style={bodyText}>{profile.display_name}</span>
+                      <span style={mutedText}>{lastActiveText(profile, onlineSet.has(profile.id), now)}</span>
+                    </span>
                   </span>
                   <button
                     type="button"
@@ -160,30 +186,37 @@ export default function LobbyPage({
           </div>
         </section>
 
-        <section style={widePanelStyle}>
-          <PanelHeader title="Players" action={`${onlineUserIds.length}/${profiles.length} online`} />
-          <div style={playersGridStyle}>
-            {profiles.map(profile => (
-              <div key={profile.id} style={playerRowStyle}>
-                <span style={onlineSet.has(profile.id) ? onlineDotStyle : offlineDotStyle} />
-                <span>{profile.display_name}</span>
-                <span style={{ marginLeft: 'auto', ...mutedText }}>{onlineSet.has(profile.id) ? 'online' : 'offline'}</span>
-              </div>
-            ))}
-            {profiles.length === 0 && <p style={mutedText}>Sign in to load players.</p>}
-          </div>
-        </section>
+        <div style={communityGridStyle}>
+          <section style={panelStyle}>
+            <PanelHeader title="Players" action={`${onlineUserIds.length}/${profiles.length} online`} />
+            <div style={playersGridStyle}>
+              {profiles.map(profile => {
+                const online = onlineSet.has(profile.id);
+                return (
+                  <div key={profile.id} style={playerRowStyle}>
+                    <span style={online ? onlineDotStyle : offlineDotStyle} />
+                    <span style={playerNameBlockStyle}>
+                      <span>{profile.display_name}</span>
+                      <span style={mutedText}>{lastActiveText(profile, online, now)}</span>
+                    </span>
+                  </div>
+                );
+              })}
+              {profiles.length === 0 && <p style={mutedText}>Sign in to load players.</p>}
+            </div>
+          </section>
 
-        <section style={widePanelStyle}>
-          <LobbyChat
-            user={user}
-            guestName={guestName}
-            messages={lobbyMessages}
-            profiles={profiles}
-            status={lobbyChatStatus}
-            onSendMessage={onSendLobbyMessage}
-          />
-        </section>
+          <section style={chatPanelStyle}>
+            <LobbyChat
+              user={user}
+              guestName={guestName}
+              messages={lobbyMessages}
+              profiles={profiles}
+              status={lobbyChatStatus}
+              onSendMessage={onSendLobbyMessage}
+            />
+          </section>
+        </div>
 
         <QueuePanel
           title="Incoming"
@@ -329,6 +362,14 @@ const gridStyle: React.CSSProperties = {
   gap: '10px',
 };
 
+const communityGridStyle: React.CSSProperties = {
+  gridColumn: '1 / -1',
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+  gap: '10px',
+  alignItems: 'start',
+};
+
 const panelStyle: React.CSSProperties = {
   background: '#262422',
   border: '1px solid #3d3b38',
@@ -339,6 +380,7 @@ const panelStyle: React.CSSProperties = {
 };
 
 const widePanelStyle: React.CSSProperties = { ...panelStyle, gridColumn: '1 / -1' };
+const chatPanelStyle: React.CSSProperties = { ...panelStyle, minHeight: 0 };
 const panelTitleStyle: React.CSSProperties = { color: '#8f8981', fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' };
 const panelActionStyle: React.CSSProperties = { color: '#629924', fontSize: '10px', fontWeight: 800 };
 const bodyText: React.CSSProperties = { color: '#cfc8bf', fontSize: '12px', lineHeight: 1.35, margin: 0 };
@@ -392,7 +434,7 @@ const refreshButtonStyle: React.CSSProperties = {
 
 const playersGridStyle: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
   gap: '6px',
 };
 
@@ -406,6 +448,12 @@ const playerRowStyle: React.CSSProperties = {
   padding: '7px 8px',
   color: '#cfc8bf',
   fontSize: '12px',
+};
+
+const playerNameBlockStyle: React.CSSProperties = {
+  display: 'grid',
+  gap: '2px',
+  minWidth: 0,
 };
 
 const onlineDotStyle: React.CSSProperties = {

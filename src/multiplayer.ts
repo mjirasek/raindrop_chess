@@ -12,6 +12,7 @@ export interface Profile {
   username: string;
   display_name: string;
   active: boolean;
+  last_seen_at?: string | null;
 }
 
 export interface Challenge {
@@ -103,6 +104,12 @@ export async function listProfiles(): Promise<Profile[]> {
     .order('display_name');
   if (error) throw error;
   return data ?? [];
+}
+
+export async function touchProfileLastSeen(): Promise<void> {
+  const client = requireSupabase();
+  const { error } = await client.rpc('touch_my_profile_last_seen');
+  if (error) throw error;
 }
 
 export async function listChallenges(userId: string): Promise<Challenge[]> {

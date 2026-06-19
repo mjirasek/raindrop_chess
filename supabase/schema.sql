@@ -3,8 +3,12 @@ create table if not exists public.profiles (
   username text not null unique,
   display_name text not null,
   active boolean not null default true,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  last_seen_at timestamptz
 );
+
+alter table public.profiles
+add column if not exists last_seen_at timestamptz;
 
 create table if not exists public.games (
   id uuid primary key default gen_random_uuid(),
@@ -57,6 +61,20 @@ begin
   return new;
 end;
 $$;
+
+create or replace function public.touch_my_profile_last_seen()
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.profiles
+  set last_seen_at = now()
+  where id = auth.uid();
+$$;
+
+revoke all on function public.touch_my_profile_last_seen() from public;
+grant execute on function public.touch_my_profile_last_seen() to authenticated;
 
 drop trigger if exists touch_games_updated_at on public.games;
 create trigger touch_games_updated_at

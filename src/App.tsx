@@ -26,6 +26,7 @@ import {
   signIn,
   signOut,
   stateFromGame,
+  touchProfileLastSeen,
   type Challenge,
   type GameMessage,
   type GameRow,
@@ -264,6 +265,19 @@ export default function App() {
 
     return () => window.clearInterval(interval);
   }, [mpUser, refreshMultiplayer]);
+
+  useEffect(() => {
+    if (!mpUser) return;
+    const touch = () => {
+      void touchProfileLastSeen().catch(() => {
+        // Older Supabase schemas do not have the heartbeat function yet.
+      });
+    };
+    touch();
+    const interval = window.setInterval(touch, 30000);
+
+    return () => window.clearInterval(interval);
+  }, [mpUser]);
 
   useEffect(() => {
     const client = supabase;
