@@ -304,5 +304,39 @@
         "med_turns": 1200
       }
     ]
+  },
+  {
+    "timestamp": "2026-06-20 22:23:46",
+    "total_games": 150,
+    "elapsed": 43.2,
+    "matchups": [
+      {
+        "label": "[A] Neural(W) vs Heuristic(B)",
+        "white": "neural",
+        "black": "heuristic",
+        "w_rate": 0.06,
+        "b_rate": 0.38,
+        "d_rate": 0.56,
+        "med_turns": 1200
+      },
+      {
+        "label": "[B] Heuristic(W) vs Neural(B)",
+        "white": "heuristic",
+        "black": "neural",
+        "w_rate": 0.44,
+        "b_rate": 0.06,
+        "d_rate": 0.5,
+        "med_turns": 240
+      },
+      {
+        "label": "[C] Neural(W) vs Neural(B)",
+        "white": "neural",
+        "black": "neural",
+        "w_rate": 0.18,
+        "b_rate": 0.16,
+        "d_rate": 0.66,
+        "med_turns": 1200
+      }
+    ]
   }
 ]
