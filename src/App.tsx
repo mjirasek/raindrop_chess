@@ -302,6 +302,7 @@ export default function App() {
   const engineThinkingRef = useRef(false);
   const gameLogSavedRef = useRef(false);
   const wasGameOverRef = useRef(false);
+  const localGameIdRef = useRef<string>(crypto.randomUUID());
 
   useEffect(() => {
     loadNeuralEngine()
@@ -671,24 +672,18 @@ export default function App() {
     };
   }, [activeGame, atLatest, engineType, liveGame, localMode, neuralLoading, neuralSession, pushSnapshot]);
 
-  // ── Auto-save game log on game over ─────────────────────────────────────────
+  // ── Game log save ────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    if (!liveGame.gameOver) {
-      wasGameOverRef.current = false;
-      return;
-    }
-    if (wasGameOverRef.current || gameLogSavedRef.current || !hasSupabaseConfig) return;
-    // Only multiplayer (save once: white side) or signed-in computer player
+  const saveCurrentGameAsLog = useCallback((status: 'finished' | 'draw' | 'ongoing') => {
+    if (!hasSupabaseConfig || notations.length === 0) return;
+    // For multiplayer, only white side saves to avoid duplicates
     if (activeGame && onlineSeat !== 'white') return;
-    if (!activeGame && !mpUser) return;
-
-    wasGameOverRef.current = true;
-    gameLogSavedRef.current = true;
 
     let whiteUsername: string | null = null;
     let blackUsername: string | null = null;
     let mode = 'local';
+    let white_is_human = true;
+    let black_is_human = true;
 
     if (activeGame) {
       mode = 'multiplayer';
@@ -698,26 +693,43 @@ export default function App() {
       blackUsername = bp?.display_name ?? bp?.username ?? null;
     } else if (localMode === 'computer') {
       mode = 'computer';
+      black_is_human = false;
       const userProfile = profiles.find(p => p.id === mpUser?.id);
       whiteUsername = userProfile?.display_name ?? userProfile?.username ?? 'Player';
       blackUsername = engineType === 'neural' ? 'Neural Engine' : 'Random Engine';
     }
 
     void saveGameLog({
-      game_id: activeGame?.id ?? null,
+      game_id: activeGame?.id ?? localGameIdRef.current,
       mode,
       white_user_id: activeGame?.white_user_id ?? mpUser?.id ?? null,
       black_user_id: activeGame?.black_user_id ?? null,
       white_username: whiteUsername,
       black_username: blackUsername,
+      white_is_human,
+      black_is_human,
       winner: liveGame.winner ?? null,
+      status,
       snapshots: snapshots.map(serializeGameState),
       notations,
       move_count: notations.length,
-    }).catch(() => {
-      // Silent fail — don't interrupt user flow
-    });
-  }, [liveGame.gameOver, liveGame.winner, activeGame, onlineSeat, mpUser, profiles, localMode, engineType, snapshots, notations]);
+    }).catch(() => {});
+  }, [activeGame, engineType, liveGame.winner, localMode, mpUser, notations, onlineSeat, profiles, snapshots]);
+
+  useEffect(() => {
+    if (!liveGame.gameOver) {
+      wasGameOverRef.current = false;
+      return;
+    }
+    if (wasGameOverRef.current || gameLogSavedRef.current) return;
+    if (activeGame && onlineSeat !== 'white') return;
+
+    wasGameOverRef.current = true;
+    gameLogSavedRef.current = true;
+
+    const status = liveGame.winner ? 'finished' : 'draw';
+    saveCurrentGameAsLog(status);
+  }, [liveGame.gameOver, liveGame.winner, activeGame, onlineSeat, saveCurrentGameAsLog]);
 
   const loadHistory = useCallback(async () => {
     setHistoryStatus('Loading...');
@@ -758,15 +770,20 @@ export default function App() {
   // ── New game ─────────────────────────────────────────────────────────────────
 
   const handleNewGame = useCallback(() => {
+    // Save current game as ongoing if it had moves but didn't finish
+    if (notations.length > 0 && !liveGame.gameOver && !gameLogSavedRef.current) {
+      saveCurrentGameAsLog('ongoing');
+    }
+    gameLogSavedRef.current = false;
+    wasGameOverRef.current = false;
+    localGameIdRef.current = crypto.randomUUID();
     const s = createInitialState();
     setLiveGame(s); setSnapshots([s]); setNotations([]); setSnapshotCursor(null); setPendingNotation('');
     setClocks({ white: timeControl.initial, black: timeControl.initial });
     setClocksActive(false);
     setEngineStatus('');
-    gameLogSavedRef.current = false;
-    wasGameOverRef.current = false;
     setViewingHistory(false);
-  }, [timeControl.initial]);
+  }, [liveGame.gameOver, notations.length, saveCurrentGameAsLog, timeControl.initial]);
 
   const handleStartLocalGame = useCallback(() => {
     setLocalMode('hotseat');
@@ -813,6 +830,9 @@ export default function App() {
     applySyncedGame(row);
     setActiveChallengeId(challengeId ?? activeChallengeId);
     setClocksActive(false);
+    localGameIdRef.current = row.id;
+    gameLogSavedRef.current = false;
+    wasGameOverRef.current = false;
     setAppView('game');
   }, [activeChallengeId, applySyncedGame]);
 

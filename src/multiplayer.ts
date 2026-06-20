@@ -405,7 +405,10 @@ export interface GameLog {
   black_user_id: string | null;
   white_username: string | null;
   black_username: string | null;
+  white_is_human: boolean;
+  black_is_human: boolean;
   winner: string | null;          // 'white' | 'black' | null
+  status: string;                 // 'finished' | 'draw' | 'ongoing'
   snapshots: SerializedGameState[];
   notations: string[];
   move_count: number;
@@ -426,7 +429,7 @@ export async function listGameLogs(limit = 60): Promise<GameLogSummary[]> {
   const client = requireSupabase();
   const { data, error } = await client
     .from('game_logs')
-    .select('id, game_id, mode, white_user_id, black_user_id, white_username, black_username, winner, notations, move_count, created_at')
+    .select('id, game_id, mode, white_user_id, black_user_id, white_username, black_username, white_is_human, black_is_human, winner, status, notations, move_count, created_at')
     .order('created_at', { ascending: false })
     .limit(limit);
   if (error) throw error;

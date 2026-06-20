@@ -1,12 +1,14 @@
 import type { GameLogSummary } from '../multiplayer';
 
-function resultLabel(winner: string | null): string {
+function resultLabel(winner: string | null, status: string): string {
+  if (status === 'ongoing') return 'Unfinished';
   if (winner === 'white') return 'White won';
   if (winner === 'black') return 'Black won';
   return 'Draw';
 }
 
-function resultColor(winner: string | null): string {
+function resultColor(winner: string | null, status: string): string {
+  if (status === 'ongoing') return '#5a5753';
   if (winner === 'white') return '#d0c9bf';
   if (winner === 'black') return '#9e9b96';
   return '#c8a84a';
@@ -82,8 +84,8 @@ export default function GameHistoryPage({
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '12px', fontWeight: 700, color: resultColor(log.winner) }}>
-                    {resultLabel(log.winner)}
+                  <div style={{ fontSize: '12px', fontWeight: 700, color: resultColor(log.winner, log.status) }}>
+                    {resultLabel(log.winner, log.status)}
                   </div>
                   <div style={{ fontSize: '11px', color: '#3a3835', marginTop: '2px' }}>View →</div>
                 </div>
