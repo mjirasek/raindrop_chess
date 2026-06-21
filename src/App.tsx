@@ -11,6 +11,7 @@ import { createInitialState, flipCard, placePiece, makeMove, completePromotion }
 import { deserializeGameState, serializeGameState } from './gameSerialization';
 import { applyEngineAction, chooseRandomEngineAction, type EngineAction } from './engine/randomEngine';
 import { loadNeuralEngine, chooseNeuralAction, boardHash, ENGINE_VERSION } from './engine/neuralEngine';
+import { chooseMinimax } from './engine/minimaxEngine';
 import type { InferenceSession } from 'onnxruntime-web';
 import { hasSupabaseConfig, supabase } from './supabaseClient';
 import {
@@ -111,6 +112,34 @@ async function playNeuralEngineTurnWithNotation(
   for (let step = 0; step < 6; step++) {
     if (current.gameOver || current.turn !== movedColor) break;
     const action = await chooseNeuralAction(current, session, recentHashes);
+    if (!action) return null;
+    const before = current;
+    const actionNotation = engineActionNotation(before, action);
+    current = applyEngineAction(current, action);
+    if (actionNotation) notation.push(actionNotation);
+    if (action.kind === 'flip-card' && current.gameOver) notation.push(failedCardNotation(before));
+  }
+  if (current === state || notation.length === 0) return null;
+  return { state: current, notation: notation.join('') };
+}
+
+// Hybrid: minimax for chess-phase moves, NN policy for placement/flip decisions
+async function playHybridEngineTurnWithNotation(
+  state: GameState,
+  session: InferenceSession,
+  recentHashes?: Set<string>,
+): Promise<{ state: GameState; notation: string } | null> {
+  const movedColor = state.turn;
+  let current = state;
+  const notation: string[] = [];
+  for (let step = 0; step < 6; step++) {
+    if (current.gameOver || current.turn !== movedColor) break;
+    // Chess phase move: use minimax; otherwise use NN
+    const hasMyKing = [...current.board.values()].some(p => p.role === 'king' && p.color === movedColor);
+    const hasOppKing = [...current.board.values()].some(p => p.role === 'king' && p.color !== movedColor);
+    const usesMinimax = (hasMyKing || hasOppKing) && current.turnMode !== 'must-place' && !current.cardFlipped;
+    const minimaxAction = usesMinimax ? chooseMinimax(current) : null;
+    const action = minimaxAction ?? await chooseNeuralAction(current, session, recentHashes);
     if (!action) return null;
     const before = current;
     const actionNotation = engineActionNotation(before, action);
@@ -259,7 +288,8 @@ export default function App() {
   const [appView, setAppView] = useState<AppView>('lobby');
   const [localMode, setLocalMode] = useState<LocalMode>('hotseat');
   const [engineStatus, setEngineStatus] = useState('');
-  const [engineType, setEngineType] = useState<'neural' | 'random'>('neural');
+  const [engineType, setEngineType] = useState<'neural' | 'hybrid' | 'random'>('neural');
+  const [computerDifficulty, setComputerDifficulty] = useState<'training' | 'friendly'>('training');
   const [neuralSession, setNeuralSession] = useState<InferenceSession | null>(null);
   const [neuralLoading, setNeuralLoading] = useState(true);
   const [playMenuOpen, setPlayMenuOpen] = useState(false);
@@ -642,7 +672,7 @@ export default function App() {
   useEffect(() => {
     if (localMode !== 'computer' || activeGame || liveGame.turn !== 'black' || liveGame.gameOver || !atLatest) return;
     if (engineThinkingRef.current) return;
-    if (engineType === 'neural' && (neuralLoading || !neuralSession)) return;
+    if ((engineType === 'neural' || engineType === 'hybrid') && (neuralLoading || !neuralSession)) return;
 
     engineThinkingRef.current = true;
     setEngineStatus('Thinking...');
@@ -652,7 +682,9 @@ export default function App() {
       void (async () => {
         try {
           const recentHashes = new Set(snapshots.slice(-8).map(boardHash));
-          const result = engineType === 'neural' && neuralSession
+          const result = engineType === 'hybrid' && neuralSession
+            ? await playHybridEngineTurnWithNotation(liveGame, neuralSession, recentHashes)
+            : engineType === 'neural' && neuralSession
             ? await playNeuralEngineTurnWithNotation(liveGame, neuralSession, recentHashes)
             : playEngineTurnWithNotation(liveGame);
           if (!cancelled) {
@@ -670,7 +702,7 @@ export default function App() {
       window.clearTimeout(timeout);
       engineThinkingRef.current = false;
     };
-  }, [activeGame, atLatest, engineType, liveGame, localMode, neuralLoading, neuralSession, pushSnapshot]);
+  }, [activeGame, atLatest, engineType, liveGame, localMode, neuralLoading, neuralSession, pushSnapshot, snapshots]);
 
   // ── Game log save ────────────────────────────────────────────────────────────
 
@@ -695,10 +727,11 @@ export default function App() {
     } else if (localMode === 'computer') {
       mode = 'computer';
       black_is_human = false;
-      engine_version = engineType === 'neural' ? ENGINE_VERSION : 'random';
+      engine_version = engineType === 'random' ? 'random' : `${ENGINE_VERSION}${engineType === 'hybrid' ? '+minimax' : ''}`;
       const userProfile = profiles.find(p => p.id === mpUser?.id);
       whiteUsername = userProfile?.display_name ?? userProfile?.username ?? 'Player';
-      blackUsername = engineType === 'neural' ? `Neural (${ENGINE_VERSION})` : 'Random Engine';
+      const diffTag = computerDifficulty === 'friendly' ? ' (Friendly)' : '';
+      blackUsername = engineType === 'random' ? `Random Engine${diffTag}` : `${ENGINE_VERSION}${engineType === 'hybrid' ? '+Minimax' : ''}${diffTag}`;
     }
 
     void saveGameLog({
@@ -717,7 +750,7 @@ export default function App() {
       notations,
       move_count: notations.length,
     }).catch(() => {});
-  }, [activeGame, engineType, liveGame.winner, localMode, mpUser, notations, onlineSeat, profiles, snapshots]);
+  }, [activeGame, computerDifficulty, engineType, liveGame.winner, localMode, mpUser, notations, onlineSeat, profiles, snapshots]);
 
   useEffect(() => {
     if (!liveGame.gameOver) {
@@ -1172,30 +1205,52 @@ export default function App() {
           padding: '8px 10px',
           fontSize: '12px',
           lineHeight: 1.5,
+          display: 'grid',
+          gap: '7px',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '5px' }}>
-            <span style={{ color: '#9e9b96' }}>You play White</span>
+          {/* Difficulty row */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ color: '#9e9b96' }}>Mode</span>
             <div style={{ display: 'flex', gap: '4px' }}>
-              {(['neural', 'random'] as const).map(t => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setEngineType(t)}
-                  style={{
-                    padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, cursor: 'pointer',
-                    background: engineType === t ? '#1e2a0f' : '#1a1816',
-                    color: engineType === t ? '#a8d060' : '#6e6b67',
-                    border: `1px solid ${engineType === t ? '#3a5a12' : '#34312c'}`,
-                  }}
-                >{t === 'neural' ? 'Neural' : 'Random'}</button>
+              {([['training', 'Training'], ['friendly', 'Friendly']] as const).map(([d, label]) => (
+                <button key={d} type="button" onClick={() => {
+                  setComputerDifficulty(d);
+                  if (d === 'friendly') setEngineType('random');
+                  else setEngineType('neural');
+                }} style={{
+                  padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, cursor: 'pointer',
+                  background: computerDifficulty === d ? (d === 'training' ? '#1e2a0f' : '#2a1e0f') : '#1a1816',
+                  color: computerDifficulty === d ? (d === 'training' ? '#a8d060' : '#d09060') : '#6e6b67',
+                  border: `1px solid ${computerDifficulty === d ? (d === 'training' ? '#3a5a12' : '#5a3a12') : '#34312c'}`,
+                }}>{label}</button>
               ))}
             </div>
           </div>
-          <div style={{ color: '#6e6b67' }}>
-            {engineType === 'neural'
-              ? neuralLoading ? 'Loading neural engine...' : (engineStatus || 'Neural engine ready')
-              : (engineStatus || 'Random legal moves')}
+          {/* Engine type row */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ color: '#9e9b96' }}>Engine</span>
+            <div style={{ display: 'flex', gap: '4px' }}>
+              {(['neural', 'hybrid', 'random'] as const).map(t => (
+                <button key={t} type="button" onClick={() => setEngineType(t)} style={{
+                  padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, cursor: 'pointer',
+                  background: engineType === t ? '#1e2a0f' : '#1a1816',
+                  color: engineType === t ? '#a8d060' : '#6e6b67',
+                  border: `1px solid ${engineType === t ? '#3a5a12' : '#34312c'}`,
+                }}>{t === 'hybrid' ? 'Hybrid' : t === 'neural' ? 'Neural' : 'Random'}</button>
+              ))}
+            </div>
           </div>
+          {/* Status + training notice */}
+          <div style={{ color: '#6e6b67', fontSize: '11px' }}>
+            {engineType === 'random' ? 'Random legal moves' :
+             engineType === 'hybrid' ? (neuralLoading ? 'Loading...' : (engineStatus || 'NN placement + minimax chess')) :
+             neuralLoading ? 'Loading neural engine...' : (engineStatus || 'Neural engine ready')}
+          </div>
+          {computerDifficulty === 'training' && (
+            <div style={{ color: '#5a7a3a', fontSize: '10px', borderTop: '1px solid #2e2c29', paddingTop: '5px' }}>
+              Training mode: games saved as training data
+            </div>
+          )}
         </div>
       )}
       {viewingHistory && (

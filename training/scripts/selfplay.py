@@ -317,6 +317,10 @@ def play_selfplay_game(mode, n_det, time_ms, rng=None, sf_engine=None, temperatu
     while not state['game_over'] and turn_idx < MAX_TURNS:
         if agent == 'expectimax':
             vm = expectimax_policy(state, sf_engine, temperature=temperature)
+        elif agent == 'composite':
+            from training.agents.composite_agent import composite_policy
+            vm = composite_policy(state, rng,
+                                  temperature=temperature if temperature is not None else 80)
         elif mode == 'fast':
             vm = heuristic_policy(state, temperature=temperature)
         else:
@@ -439,8 +443,8 @@ def main():
     ap.add_argument('--temp',    type=float, default=None,
                     help='Heuristic softmax temperature (centipawns). Default: 80 from heuristic_agent. Lower = more decisive.')
     ap.add_argument('--agent',   type=str,   default='heuristic',
-                    choices=['heuristic', 'expectimax'],
-                    help='Policy agent for selfplay. expectimax uses SF for flip-vs-move decisions.')
+                    choices=['heuristic', 'expectimax', 'composite'],
+                    help='Policy agent for selfplay. composite = fast minimax, no SF needed.')
     args = ap.parse_args()
 
     out_dir = args.out if os.path.isabs(args.out) else os.path.join(os.getcwd(), args.out)
@@ -485,7 +489,8 @@ def main():
 
     ts       = datetime.now().strftime('%Y%m%d_%H%M%S')
     use_sf_tag = args.sf or args.agent == 'expectimax'  # expectimax always uses SF
-    tag      = args.mode + ('_sf' if use_sf_tag else '') + (f'_{args.agent}' if args.agent != 'heuristic' else '')
+    agent_tag  = f'_{args.agent}' if args.agent != 'heuristic' else ''
+    tag        = args.mode + ('_sf' if use_sf_tag else '') + agent_tag
     out_path = os.path.join(out_dir, f'selfplay_{tag}_{ts}.pkl')
     with open(out_path, 'wb') as f:
         pickle.dump(all_examples, f, protocol=pickle.HIGHEST_PROTOCOL)
