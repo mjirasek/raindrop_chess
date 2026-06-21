@@ -71,13 +71,16 @@ def wait_for_tmux(session: str, poll_secs=60):
 
 def wait_for_local_selfplay(gen: int, poll_secs=30):
     """Wait until a Gen N selfplay pkl file appears in local data dir."""
-    log(f'Waiting for local Gen{gen} selfplay data...')
+    log(f'Waiting for local Gen{gen} selfplay data (expectimax or composite+SF)...')
     import glob
-    pattern = os.path.join(LOCAL_DATA, f'selfplay_fast_sf_expectimax_*.pkl')
+    patterns = [
+        os.path.join(LOCAL_DATA, 'selfplay_fast_sf_expectimax_*.pkl'),
+        os.path.join(LOCAL_DATA, 'selfplay_fast_sf_composite_*.pkl'),
+    ]
     while True:
-        files = sorted(glob.glob(pattern))
+        files = sorted(f for p in patterns for f in glob.glob(p))
         if files:
-            log(f'Local selfplay found: {os.path.basename(files[-1])}')
+            log(f'Local selfplay found: {len(files)} file(s), latest: {os.path.basename(files[-1])}')
             return files[-1]
         time.sleep(poll_secs)
 
