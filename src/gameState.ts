@@ -2,6 +2,7 @@ export {
   availablePromotionRoles,
   completePromotion,
   createInitialState,
+  createStandardChessState,
   flipCard,
   legalMovesForState,
   makeMove,
